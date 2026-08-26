@@ -1,0 +1,36 @@
+# SwiftLint configuration — strict mode passes only with zero violations.
+# Kept deliberately minimal for P0; tightened as surfaces grow.
+
+included:
+  - Packages/HermesKit/Sources
+  - Packages/HermesKit/Tests
+  - App
+  - Tests
+
+opt_in_rules:
+  - empty_count
+  - explicit_init
+  - closure_spacing
+  - overridden_super_call
+  - redundant_nil_coalescing
+  - private_action
+  - untyped_error_in_catch
+
+line_length:
+  warning: 120
+  error: 160
+
+identifier_name:
+  min_length: 2
+  excluded:
+    - id
+    - x
+    - y
+
+type_body_length:
+  warning: 300
+  error: 500
+
+file_length:
+  warning: 500
+  error: 800

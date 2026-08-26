@@ -1,0 +1,39 @@
+# XcodeGen
+*.xcodeproj
+!default.xcodeproj
+
+# Swift
+.build/
+.swiftpm/
+Package.resolved
+*.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/
+
+# macOS / Xcode cruft
+.DS_Store
+xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+DerivedData/
+build/
+
+# Test & coverage artifacts
+*.xcresult
+.coverage/
+cov_*.profdata
+*.profraw
+
+# Gauntlet working artifacts
+.gauntlet/
+*.gate.log
+
+# Secrets — never, ever
+.env
+.env.*
+*.p8
+*.p12
+*.mobileprovision
+auth.json
+secrets/
+
+# Captured raw gateway recordings (sanitized copies live in Tests/Fixtures/)
+captures/raw/

@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Hermes tui_gateway protocol catalog",
+  "derived_from": [
+    "~/.hermes/hermes-agent/tui_gateway/server.py",
+    "~/.hermes/hermes-agent/tui_gateway/ws.py",
+    "~/.hermes/hermes-agent/gateway/platforms/api_server.py",
+    "~/.hermes/hermes-agent/hermes_cli/web_server.py"
+  ],
+  "derived_at": "2026-08-26",
+  "note": "Source wins over docs. Regenerate via scripts/derive_protocol.py; deltas listed in docs/PROTOCOL.md.",
+  "framing": {
+    "transport": "websocket",
+    "path": "/api/ws",
+    "encoding": "newline-delimited JSON-RPC 2.0, both directions",
+    "canonical_form": "sorted keys, no insignificant whitespace; fixtures stored canonically"
+  },
+  "requests": [],
+  "events": []
+}

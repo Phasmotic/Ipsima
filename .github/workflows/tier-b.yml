@@ -1,0 +1,159 @@
+name: tier-b
+# Tier B gauntlet — macOS hardware gates (G7–G13).
+# Dispatched by scripts/gauntlet.sh --tier-b after Tier A is green; never weakened,
+# never continue-on-error. Minutes are free on this public repo.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: tier-b-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  XCODE_PATH: /Applications/Xcode_26.6.app   # macos-26 default (image README); pinned explicitly
+
+jobs:
+  ios:
+    name: G7/G8/G10/G11/G12 · iOS simulator
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pin Xcode
+        run: sudo xcode-select -s "$XCODE_PATH"
+
+      - name: Regenerate project & diff (G6, authoritative)
+        run: |
+          brew install xcodegen
+          xcodegen generate
+          git diff --exit-code -- Talaria.xcodeproj
+
+      - name: Pick simulator devices (large + small, drift-proof)
+        run: |
+          LARGE=""
+          SMALL=""
+          for d in "iPhone 17 Pro Max" "iPhone 16 Pro Max" "iPhone 15 Pro Max"; do
+            if xcrun simctl list devices available | grep -q "$d ("; then LARGE="$d"; break; fi
+          done
+          for d in "iPhone SE (3rd generation)" "iPhone 16e" "iPhone 13 mini"; do
+            if xcrun simctl list devices available | grep -q "$d ("; then SMALL="$d"; break; fi
+          done
+          [ -n "$LARGE" ] || { echo "::error::no large iPhone simulator found"; exit 1; }
+          [ -n "$SMALL" ] || { echo "::error::no small iPhone simulator found"; exit 1; }
+          echo "LARGE_DEVICE=$LARGE" >> "$GITHUB_ENV"
+          echo "SMALL_DEVICE=$SMALL" >> "$GITHUB_ENV"
+          echo "Using: $LARGE + $SMALL"
+
+      - name: Build app + extensions (G7, warnings-as-errors)
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -scheme Talaria-iOS \
+            -destination "platform=iOS Simulator,name=$LARGE_DEVICE" \
+            SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
+            | tee .gauntlet/g7.log
+
+      - name: Unit tests (G8)
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -scheme Talaria-iOS \
+            -destination "platform=iOS Simulator,name=$LARGE_DEVICE" \
+            SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
+            -resultBundlePath .gauntlet/unit.xcresult \
+            | tee .gauntlet/g8-unit.log
+
+      - name: UI tests — smoke + accessibility audit + screenshots + launch metric (G8/G10/G11/G12)
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -scheme Talaria-UI \
+            -destination "platform=iOS Simulator,name=$SMALL_DEVICE" \
+            SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
+            -resultBundlePath .gauntlet/ui.xcresult \
+            | tee .gauntlet/g8-ui.log
+
+      - name: Export screenshots (G11 artifact)
+        run: |
+          mkdir -p screenshots
+          xcrun xcresulttool export attachments \
+            --path .gauntlet/ui.xcresult \
+            --output-path screenshots \
+          || xcrun xcresulttool export --path .gauntlet/ui.xcresult --output-path screenshots --type directory
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: g11-screenshots
+          path: screenshots/
+          if-no-files-found: error   # missing evidence is a failure, not a note
+
+  watchos:
+    name: G9 · watch app + widgets + UI smoke
+    runs-on: macos-26
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pin Xcode
+        run: sudo xcode-select -s "$XCODE_PATH"
+
+      - name: Regenerate project (consistency with ios job)
+        run: |
+          brew install xcodegen
+          xcodegen generate
+          git diff --exit-code -- Talaria.xcodeproj
+
+      - name: Build watch app + widget extension (warnings-as-errors)
+        run: |
+          set -o pipefail
+          WATCH_DEST=$(xcrun simctl list devices available | grep -m1 -E 'Watch.*(Series|Ultra).*\(' | sed -E 's/^.*([A-Za-z0-9 ]+ \([0-9A-F-]+\)).*/\1/' | tr -d ' ()' )
+          xcodebuild build \
+            -scheme Talaria-Watch \
+            -destination "platform=watchOS Simulator,name=${WATCH_DEST:-$(xcrun simctl list devices available | grep -m1 'Watch' | awk -F'(' '{print $1}' | xargs)}" \
+            SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
+            | tee .gauntlet/g9-build.log
+
+      - name: watchOS UI smoke test
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -scheme Talaria-WatchUI \
+            -destination "$(xcodebuild -showdestinations -scheme Talaria-WatchUI 2>/dev/null | grep -m1 'platform=watchOS Simulator' | sed -E 's/.*(\{.*\}).*/\1/' | tr -d '{}') " \
+            SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
+            -resultBundlePath .gauntlet/watchui.xcresult \
+            | tee .gauntlet/g9-ui.log
+
+  archive:
+    name: G13 · unsigned archive links everything
+    runs-on: macos-26
+    timeout-minutes: 30
+    needs: [ios]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pin Xcode
+        run: sudo xcode-select -s "$XCODE_PATH"
+
+      - name: Regenerate project
+        run: |
+          brew install xcodegen
+          xcodegen generate
+
+      - name: Archive without signing
+        run: |
+          set -o pipefail
+          xcodebuild archive \
+            -scheme Talaria-iOS \
+            -destination "generic/platform=iOS Simulator" \
+            -archivePath .gauntlet/talaria.xcarchive \
+            CODE_SIGNING_ALLOWED=NO \
+            | tee .gauntlet/g13.log
+
+      - name: Verify embeds (widget extension + watch app inside archive)
+        run: |
+          APP=$(find .gauntlet/talaria.xcarchive -name "*.app" -maxdepth 6 | grep -v Watch | head -1)
+          echo "app bundle: $APP"
+          ls "$APP/PlugIns" | tee .gauntlet/g13-embeds.txt
+          find .gauntlet/talaria.xcarchive -name "*.watchful*" -o -name "*Watch*.app" | tee -a .gauntlet/g13-embeds.txt
+          grep -q ".appex" .gauntlet/g13-embeds.txt || { echo "::error::widget extension not embedded"; exit 1; }
