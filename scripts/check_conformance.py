@@ -1,26 +1,31 @@
 #!/usr/bin/env python3
 """G3 — protocol conformance.
 
-Two checks, both derived from committed artifacts:
+Three checks, all derived from committed artifacts:
 
-1. Catalog coverage: every request/event name in protocol/methods.json appears
-   at least once across the golden fixtures in Tests/HermesKitTests/Fixtures/.
-2. Byte identity: every fixture frame, re-encoded canonically
-   (sorted keys, compact separators, UTF-8), is byte-identical to the stored
-   line. This pins the same canonical form WireCodec.swift produces on the
-   Swift side, cross-checked here in Python.
+1. Golden frames: every fixture line in
+   Packages/HermesKit/Tests/HermesKitTests/Fixtures/*.jsonl decodes as
+   JSON-RPC and is byte-identical to its canonical re-encode (sorted keys,
+   compact separators) — the same canonical form WireCodec.swift produces.
+2. Generated-test coverage: the committed ProtocolConformanceTests.swift
+   (scripts/gen_conformance_tests.py) mentions EVERY method and event name in
+   protocol/methods.json.
+3. Regeneration determinism: re-running the generator produces no diff.
 
-Exit 0 only if both hold.
+Exit 0 only if all three hold.
 """
 from __future__ import annotations
 
 import json
 import pathlib
+import subprocess
 import sys
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 CATALOG = REPO / "protocol" / "methods.json"
 FIXTURE_DIR = REPO / "Packages" / "HermesKit" / "Tests" / "HermesKitTests" / "Fixtures"
+GENERATED = REPO / "Packages" / "HermesKit" / "Tests" / "HermesKitTests" / "ProtocolConformanceTests.swift"
+GEN_SCRIPT = REPO / "scripts" / "gen_conformance_tests.py"
 
 
 def canonical(obj: object) -> bytes:
@@ -29,14 +34,18 @@ def canonical(obj: object) -> bytes:
 
 
 def main() -> int:
+    failures: list[str] = []
+
     catalog = json.loads(CATALOG.read_text())
     required = {m["name"] for m in catalog.get("requests", [])}
     required |= {e["name"] for e in catalog.get("events", [])}
+    if not required:
+        print("catalog is EMPTY — protocol derivation not done; refusing hollow pass")
+        print("\nG3: FAIL")
+        return 1
 
-    seen: dict[str, int] = {}
-    failures: list[str] = []
+    # --- 1. golden frames ---------------------------------------------------
     total_frames = 0
-
     for fixture in sorted(FIXTURE_DIR.glob("*.jsonl")):
         for lineno, raw in enumerate(fixture.read_text().splitlines(), 1):
             if not raw.strip():
@@ -47,29 +56,30 @@ def main() -> int:
             except json.JSONDecodeError as exc:
                 failures.append(f"{fixture.name}:{lineno}: invalid JSON ({exc})")
                 continue
-            # byte identity against canonical form
             if canonical(envelope) != raw.encode("utf-8"):
-                failures.append(f"{fixture.name}:{lineno}: not canonical (re-encode differs)")
-            method = envelope.get("method")
-            if method:
-                seen[method] = seen.get(method, 0) + 1
-            elif "result" in envelope or "error" in envelope:
-                # responses carry the method implicitly; count them toward the
-                # paired request via params echo when present
-                pass
+                failures.append(f"{fixture.name}:{lineno}: not canonical")
 
-    missing = sorted(required - set(seen))
-    if not required:
-        # An empty catalog makes every downstream check vacuous.
-        print("catalog is EMPTY — protocol derivation not done; refusing hollow pass")
-        print("\nG3: FAIL")
-        return 1
-    for name in missing:
-        failures.append(f"catalog method/event never exercised by fixtures: {name}")
+    # --- 2. generated-test coverage -----------------------------------------
+    gen_text = GENERATED.read_text() if GENERATED.exists() else ""
+    uncovered = sorted(n for n in required if f'"{n}"' not in gen_text)
+    for name in uncovered:
+        failures.append(f"catalog entry missing from generated conformance tests: {name}")
+
+    # --- 3. generator determinism -------------------------------------------
+    before = GENERATED.read_bytes() if GENERATED.exists() else b""
+    proc = subprocess.run([sys.executable, str(GEN_SCRIPT)],
+                          capture_output=True, text=True)
+    if proc.returncode != 0:
+        failures.append(f"generator failed: {proc.stderr.strip()[:200]}")
+    else:
+        after = GENERATED.read_bytes()
+        if after != before:
+            failures.append("regenerating ProtocolConformanceTests.swift produced a diff "
+                            "(committed file is stale)")
 
     print(f"catalog entries : {len(required)}")
-    print(f"fixture frames  : {total_frames}")
-    print(f"exercised       : {len(required & set(seen))}/{len(required)}")
+    print(f"golden frames   : {total_frames}")
+    print(f"uncovered       : {len(uncovered)}")
     if failures:
         print("\nFAILURES:")
         for f in failures:
