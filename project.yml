@@ -33,6 +33,8 @@ targets:
       # Xcode 26 always runs metadata extraction for Swift app bundles; P4 uses App Intents.
       - sdk: AppIntents.framework
       - target: TalariaWidgets   # extension embedded in the app bundle
+      - target: TalariaWatch     # watch app embedded in the iOS app bundle
+        embed: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.schonfeld.talaria.app

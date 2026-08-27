@@ -9,6 +9,8 @@ import sys
 import unittest
 import uuid
 
+from scripts import check_source_hygiene as hygiene
+
 
 REPO = Path(__file__).resolve().parent.parent
 CHECKER = REPO / "scripts" / "check_source_hygiene.py"
@@ -250,6 +252,87 @@ class SourceHygieneTests(unittest.TestCase):
         self.assert_path_fails(
             "scripts/untracked.py", assignment("endpoint", untracked_value), untracked_value
         )
+
+    def test_tracked_shell_script_with_100755_index_mode_passes(self) -> None:
+        self.write_text("scripts/probe.sh", "#!/bin/sh\nexit 0\n")
+        added = self.git("add", "scripts/probe.sh")
+        self.assertEqual(added.returncode, 0, added.stderr)
+        marked = self.git("update-index", "--chmod=+x", "scripts/probe.sh")
+        self.assertEqual(marked.returncode, 0, marked.stderr)
+
+        result = self.run_checker()
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_tracked_shell_script_with_100644_index_mode_is_a_finding(self) -> None:
+        self.write_text("scripts/probe.sh", "#!/bin/sh\nexit 0\n")
+        added = self.git("add", "scripts/probe.sh")
+        self.assertEqual(added.returncode, 0, added.stderr)
+        marked = self.git("update-index", "--chmod=-x", "scripts/probe.sh")
+        self.assertEqual(marked.returncode, 0, marked.stderr)
+
+        result = self.run_checker()
+        output = result.stdout + result.stderr
+
+        self.assertEqual(result.returncode, 1, output)
+        self.assertIn("scripts/probe.sh", output)
+        self.assertIn("100644", output)
+        self.assertIn("expected 100755", output)
+        self.assertNotIn("blocked", output.lower())
+
+    def test_unmerged_tracked_shell_index_evidence_blocks(self) -> None:
+        relative = "scripts/conflict.sh"
+        configured = self.git("config", "core.autocrlf", "false")
+        self.assertEqual(configured.returncode, 0, configured.stderr)
+        self.assertEqual(configured.stderr, "")
+        self.write_text(relative, "#!/bin/sh\nexit 0\n")
+        added = self.git("add", relative)
+        self.assertEqual(added.returncode, 0, added.stderr)
+        self.assertEqual(added.stderr, "")
+        hashed = self.git("hash-object", "-w", relative)
+        self.assertEqual(hashed.returncode, 0, hashed.stderr)
+        self.assertEqual(hashed.stderr, "")
+        object_id = hashed.stdout.strip()
+        zero_id = "0" * len(object_id)
+        injected = subprocess.run(
+            ["git", "-C", str(self.repository), "update-index", "--index-info"],
+            input=(
+                f"0 {zero_id}\t{relative}\n"
+                f"100755 {object_id} 1\t{relative}\n"
+                f"100755 {object_id} 2\t{relative}\n"
+                f"100755 {object_id} 3\t{relative}\n"
+            ).encode("ascii"),
+            capture_output=True,
+        )
+        self.assertEqual(injected.returncode, 0, injected.stderr)
+        self.assertEqual(injected.stderr, b"")
+
+        staged = self.git("ls-files", "--stage", "--", relative)
+        self.assertEqual(staged.returncode, 0, staged.stderr)
+        self.assertEqual(staged.stderr, "")
+        stages = [line.split(maxsplit=3)[2] for line in staged.stdout.splitlines()]
+        self.assertEqual(stages, ["1", "2", "3"])
+
+        result = self.run_checker()
+        output = result.stdout + result.stderr
+
+        self.assertEqual(result.returncode, 2, output)
+
+    def test_adversarial_shell_index_records_block(self) -> None:
+        object_id = "1" * 40
+        valid = f"100755 {object_id} 0\tscripts/probe.sh\0".encode()
+        cases = {
+            "not NUL terminated": valid[:-1],
+            "malformed": b"not an index record\0",
+            "duplicate": valid + valid,
+            "unmerged": f"100755 {object_id} 2\tscripts/probe.sh\0".encode(),
+            "zero object": f"100755 {'0' * 40} 0\tscripts/probe.sh\0".encode(),
+            "non-regular": f"120000 {object_id} 0\tscripts/probe.sh\0".encode(),
+        }
+        for name, raw_index in cases.items():
+            with self.subTest(name=name):
+                with self.assertRaises(hygiene.ScanBlocked):
+                    hygiene.parse_tracked_shell_modes(raw_index)
 
     def test_gitignored_path_is_the_only_kind_excluded(self) -> None:
         value = network_url("http", "forbidden.invalid")

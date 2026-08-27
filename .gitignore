@@ -26,6 +26,10 @@ cov_*.profdata
 .gauntlet/
 *.gate.log
 
+# Python bytecode
+__pycache__/
+*.py[cod]
+
 # Secrets — never, ever
 .env
 .env.*
@@ -35,5 +39,5 @@ cov_*.profdata
 auth.json
 secrets/
 
-# Captured raw gateway recordings (sanitized copies live in Tests/Fixtures/)
+# Captured raw gateway recordings (only the sanitized HermesKit fixture is tracked)
 captures/raw/

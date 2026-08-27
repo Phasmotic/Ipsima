@@ -7,19 +7,23 @@ streaming chat, live tool activity, remote approvals, session management. Speaks
 
 ## Status
 
-Phase 0 — scaffold, protocol derivation, gauntlet wiring. See [`docs/PROTOCOL.md`](docs/PROTOCOL.md)
-for the protocol catalog derived from Hermes source, and `qa/` for gate verdicts.
+Phase 0 — scaffold, protocol derivation, gauntlet wiring. The project contract is recorded in
+the [operating brief](docs/BRIEF.md), the source-derived wire contract is in the
+[protocol guide](docs/PROTOCOL.md), and gate policy is in
+[governance](docs/GOVERNANCE.md).
 
 ## Layout
 
 ```
 project.yml            XcodeGen spec — the ONLY source of truth for the Xcode project
-Packages/HermesKit/    Pure-Swift SwiftPM package: codec, transport, models, mock gateway.
-                       Zero Apple-framework imports; builds and tests on Linux.
+Packages/HermesKit/    Pure-Swift SwiftPM package: Phase-0 codec now; P1 transport, models,
+                       state machines, and mock gateway will live here.
+                       Zero Apple-only framework imports; builds and tests on Linux.
 App/                   Thin SwiftUI shells: Talaria (iOS), TalariaWidgets, TalariaWatch,
                        TalariaWatchWidgets
 protocol/methods.json  Machine-readable method/event catalog (derived from Hermes source)
-Tests/Fixtures/        Sanitized golden JSON-RPC frame recordings (conformance substrate)
+Packages/HermesKit/Tests/HermesKitTests/Fixtures/
+                       Sanitized golden JSON-RPC frame recordings (conformance substrate)
 scripts/gauntlet.ps1   PowerShell → WSL entry for Tier A; -TierB dispatches macOS CI
 scripts/gauntlet.sh    Internal native-Linux gate runner invoked by gauntlet.ps1
 ```
@@ -36,15 +40,18 @@ Xcode 26.6 toolchain on `macos-26`. The compiler, SwiftFormat, and SwiftLint ver
 exactly; release assets are hash-verified. The native environment is version-pinned but not
 container-hermetic, so Tier B remains authoritative. The final green sentinel requires every
 armed gate genuinely green; repair checkpoints may preserve explicitly named honest-red gates.
-A gate is never weakened to pass — see `docs/GOVERNANCE.md`.
+A gate is never weakened to pass — see [governance](docs/GOVERNANCE.md).
 
-## Security posture
+## Planned security requirements
 
-- Gateway tokens live in the iOS Keychain only (`kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`).
-- Approvals (dangerous-command Allow/Deny) are biometric-gated; deny is the safe default;
-  full command text shown untruncated.
-- Plain HTTP to non-loopback hosts is refused (or gated behind a red, explicit override).
+- P2 will store gateway tokens only in the iOS Keychain with
+  `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`.
+- Dangerous-command approvals will be biometric-gated, default to deny, and show the complete
+  command without truncation.
+- The transport layer will refuse plain HTTP to non-loopback hosts.
 - Recommended remote access: [Tailscale](https://tailscale.com) to your home gateway.
+
+These controls are requirements, not Phase 0 implementation claims.
 
 ## Deliberate omissions
 

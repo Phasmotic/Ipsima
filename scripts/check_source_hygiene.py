@@ -54,6 +54,12 @@ HOST_ASSIGNMENT = re.compile(
     re.IGNORECASE,
 )
 STRING_LITERAL = re.compile(r"[#]*[\"']([^\"']+)[\"']")
+INDEX_ENTRY = re.compile(
+    rb"(?P<mode>[0-7]{6}) (?P<object_id>[0-9a-f]+) "
+    rb"(?P<stage>[0-3])\t(?P<path>.*)",
+    re.DOTALL,
+)
+VALID_INDEX_MODES = frozenset({"100644", "100755", "120000", "160000"})
 
 
 def _secure_url(value: str) -> str:
@@ -176,6 +182,61 @@ def _run_git(repository: Path, arguments: list[str]) -> bytes:
     return process.stdout
 
 
+def _portable_git_path(relative: str, evidence_kind: str) -> PurePosixPath:
+    portable = PurePosixPath(relative)
+    if (
+        not relative
+        or portable.is_absolute()
+        or any(part in {"", ".", ".."} for part in portable.parts)
+        or "\\" in relative
+        or any(ord(character) < 32 or ord(character) == 127 for character in relative)
+    ):
+        raise ScanBlocked(f"Git returned an unsafe {evidence_kind} path")
+    return portable
+
+
+def parse_tracked_shell_modes(raw_index: bytes) -> dict[str, str]:
+    if raw_index and not raw_index.endswith(b"\0"):
+        raise ScanBlocked("Git index evidence was not NUL terminated")
+    entries = raw_index[:-1].split(b"\0") if raw_index else []
+    shell_modes: dict[str, str] = {}
+    for entry in entries:
+        match = INDEX_ENTRY.fullmatch(entry)
+        if match is None:
+            raise ScanBlocked("Git returned malformed index evidence")
+
+        object_id = match.group("object_id")
+        if len(object_id) not in {40, 64}:
+            raise ScanBlocked("Git returned an invalid index object ID")
+        try:
+            relative = match.group("path").decode("utf-8")
+        except UnicodeDecodeError as error:
+            raise ScanBlocked("Git returned a non-UTF-8 index path") from error
+        _portable_git_path(relative, "index")
+
+        mode = match.group("mode").decode("ascii")
+        if mode not in VALID_INDEX_MODES:
+            raise ScanBlocked("Git returned an invalid index mode")
+        if not relative.endswith(".sh"):
+            continue
+        if match.group("stage") != b"0":
+            raise ScanBlocked("a tracked shell script has unmerged index evidence")
+        if object_id == b"0" * len(object_id):
+            raise ScanBlocked("a tracked shell script has indeterminate index evidence")
+        if relative in shell_modes:
+            raise ScanBlocked("Git returned duplicate shell-script index evidence")
+        if mode not in {"100644", "100755"}:
+            raise ScanBlocked("a tracked shell script has a non-regular index mode")
+        shell_modes[relative] = mode
+    return shell_modes
+
+
+def tracked_shell_modes(repository: Path) -> dict[str, str]:
+    return parse_tracked_shell_modes(
+        _run_git(repository, ["ls-files", "--stage", "-z"])
+    )
+
+
 def repository_files(repository: Path) -> list[tuple[str, Path]]:
     root_output = _run_git(repository, ["rev-parse", "--show-toplevel"])
     try:
@@ -201,15 +262,7 @@ def repository_files(repository: Path) -> list[tuple[str, Path]]:
 
     files: list[tuple[str, Path]] = []
     for relative in sorted(relative_paths):
-        portable = PurePosixPath(relative)
-        if (
-            not relative
-            or portable.is_absolute()
-            or any(part in {"", ".", ".."} for part in portable.parts)
-            or "\\" in relative
-            or any(ord(character) < 32 or ord(character) == 127 for character in relative)
-        ):
-            raise ScanBlocked("Git returned an unsafe repository path")
+        portable = _portable_git_path(relative, "repository")
         path = repository.joinpath(*portable.parts)
         try:
             mode = path.lstat().st_mode
@@ -377,7 +430,14 @@ def scan(repository: Path) -> tuple[list[str], int, int]:
     findings: list[str] = []
     text_files = 0
     binary_files = 0
-    for relative, path in repository_files(repository):
+    files = repository_files(repository)
+    for relative, mode in sorted(tracked_shell_modes(repository).items()):
+        if mode == "100644":
+            findings.append(
+                f"{relative}: tracked shell script has Git index mode 100644; "
+                "expected 100755"
+            )
+    for relative, path in files:
         try:
             payload = path.read_bytes()
         except OSError as error:

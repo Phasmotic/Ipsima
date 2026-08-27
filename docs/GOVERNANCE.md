@@ -22,6 +22,57 @@ Phase activation is not a deferral. The binding brief explicitly leaves G11 and 
 through P1 because no product UI surface exists. They are recorded as `N/A (no UI surface yet)`,
 never as passing, and they arm in P2. Once a gate is armed, ordinary work cannot return it to N/A.
 
+## Capture and publication safety
+
+Talaria is a public repository. A value that enters a tracked fixture, commit, pull request,
+issue, or other public artifact must therefore be safe for permanent disclosure; later deletion
+does not undo publication.
+
+### Golden-capture boundary
+
+Golden fixtures come only from the source-bound capture harness. It requires a clean checkout at
+the repository and commit pinned by `protocol/methods.json`, verifies the pinned source bytes and
+locked runtime, starts only its own isolated gateway process, and proves ownership before driving
+it. Ambient configuration, credentials, home state, caches, and working directories are not
+forwarded. Existing gateway processes are observed only as a count and are never attached to,
+signalled, or reaped.
+
+The current capture contract is exactly three real frames: the gateway-ready event, one ping
+request, and its response. Raw frames remain in memory only. Gateway output exists only inside a
+private temporary directory and is removed on every handled exit. Neither may be copied into the
+repository, terminal evidence, an issue, or a pull request.
+
+The sanitizer is recursive and default-deny. It removes captured object names, replaces opaque
+text, normalizes scalar values, deterministically aliases protocol identifiers, and preserves
+only reviewed JSON-RPC control strings from the pinned catalog. Only its canonical JSONL output
+may cross the capture boundary. The fixture is written atomically after validation. G3 repeats
+the residual safety check so a manually placed or edited unsanitized fixture fails even when its
+JSON is otherwise valid and canonical.
+
+### Public-artifact redaction
+
+All public references to repository content use repository-relative paths and, where useful,
+line numbers. Never publish absolute paths or home-directory structure. Also never publish:
+
+- local account, host, or machine names;
+- network addresses or endpoint numbers;
+- credential values, or infrastructure-specific credential names;
+- names or operational details of unrelated projects, products, or clients;
+- local session, request, correlation, job, transcript, or other runtime identifiers;
+- raw snapshots, job logs, gateway output, captured free text, or tool payloads; or
+- captured model or provider selections.
+
+Public upstream URLs and commit SHAs, reviewed repository source excerpts, tool and dependency
+versions, and repository-relative findings are publishable when they contain none of the
+prohibited material above. A finding that contains protected detail is published with that
+detail redacted and the redaction noted; the finding is not silently omitted. If redaction would
+make it meaningless, stop and request direction. Approval to update one public artifact applies
+only to that artifact and does not authorize a new issue, repository, or disclosure surface.
+
+Capture and gate diagnostics follow the same rule. They emit bounded reason codes or reviewed
+status markers, never input-derived values. Local raw evidence is used only for verification and
+is not quoted into public audit prose.
+
 ## Tier A launcher and native-toolchain deviation
 
 Tier A is supported only through PowerShell's `scripts/gauntlet.ps1` launcher. That launcher
@@ -61,14 +112,14 @@ checked against their published SHA-256 digest.
 | --- | --- | --- |
 | Swift | 6.3.3 | Native WSL uses Swift 6.3.3; Tier B receives Swift 6.3.3 with Xcode 26.6. |
 | SwiftFormat | 0.62.1 | The Linux release asset is verified for Tier A; `macos-26` supplies the same version. |
-| SwiftLint | 0.65.0 | The Linux release asset is verified for Tier A; `macos-26` supplies the same version. |
+| SwiftLint | 0.65.0 | Digest-verified release assets provide the same version to Tier A and Tier B. |
 | gitleaks | 8.30.1 | The release asset is explicitly installed, digest-verified, and version-checked. |
 | XcodeGen | 2.46.0 | The release asset is explicitly installed, digest-verified, and version-checked. |
 | GitHub CLI (run evidence) | 2.45.0 | Native WSL handles dispatch, run selection, watching, and the exact run-snapshot schema. |
 | GitHub CLI (job logs) | 2.88.1 | The PowerShell launcher selects and version-checks the Windows CLI used only for per-job log retrieval. |
 
-The macOS runner inventory supplies SwiftFormat and SwiftLint at the required versions. Gitleaks
-and XcodeGen are not assumed from runner state; the gauntlet installs and verifies their pinned
+The macOS runner inventory supplies SwiftFormat at the required version. SwiftLint, gitleaks, and
+XcodeGen are not assumed from runner state; the gauntlet installs and verifies their pinned
 artifacts explicitly. Tier B remains authoritative for Apple-platform compilation and tests.
 
 XcodeGen does not publish a verified Linux executable for the pinned release. Local G6 therefore

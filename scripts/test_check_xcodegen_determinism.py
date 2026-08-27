@@ -103,6 +103,25 @@ class ProjectMetadataContractTests(unittest.TestCase):
             "INFOPLIST_KEY_WKWatchOnly", self.project["settings"]["base"]
         )
 
+    def test_ios_app_embeds_exact_watch_application_dependency(self) -> None:
+        targets = self.project["targets"]
+        dependencies = targets["Talaria"]["dependencies"]
+        watch_dependencies = [
+            dependency
+            for dependency in dependencies
+            if isinstance(dependency, dict)
+            and dependency.get("target") == "TalariaWatch"
+        ]
+
+        self.assertEqual(
+            watch_dependencies,
+            [{"target": "TalariaWatch", "embed": True}],
+        )
+        self.assertIs(watch_dependencies[0]["embed"], True)
+        self.assertIn({"target": "TalariaWidgets"}, dependencies)
+        self.assertEqual(targets["TalariaWatch"]["type"], "application")
+        self.assertEqual(targets["TalariaWatch"]["platform"], "watchOS")
+
 
 @unittest.skipIf(os.name == "nt", "executable-script probes run in Tier A and Tier B")
 class XcodeGenDeterminismTests(unittest.TestCase):
