@@ -46,6 +46,52 @@ class ProjectBundleVersionTests(unittest.TestCase):
                 )
 
 
+class ProjectMetadataContractTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.project = yaml.safe_load(
+            (REPO / "project.yml").read_text(encoding="utf-8")
+        )
+
+    def test_all_swift_test_bundles_link_app_intents(self) -> None:
+        expected_dependencies = {
+            "TalariaTests": [
+                {"target": "Talaria"},
+                {"sdk": "AppIntents.framework"},
+            ],
+            "TalariaUITests": [
+                {"target": "Talaria"},
+                {"sdk": "AppIntents.framework"},
+            ],
+            "TalariaWatchUITests": [
+                {"target": "TalariaWatch"},
+                {"sdk": "AppIntents.framework"},
+            ],
+        }
+
+        for target_name, expected in expected_dependencies.items():
+            dependencies = self.project["targets"][target_name]["dependencies"]
+            with self.subTest(target=target_name):
+                self.assertEqual(dependencies, expected)
+
+    def test_watch_app_declares_companion_without_becoming_watch_only(self) -> None:
+        settings = self.project["targets"]["TalariaWatch"]["settings"]["base"]
+
+        self.assertEqual(
+            settings["INFOPLIST_KEY_WKCompanionAppBundleIdentifier"],
+            self.project["targets"]["Talaria"]["settings"]["base"][
+                "PRODUCT_BUNDLE_IDENTIFIER"
+            ],
+        )
+        self.assertIs(
+            settings["INFOPLIST_KEY_WKRunsIndependentlyOfCompanionApp"], True
+        )
+        self.assertNotIn("INFOPLIST_KEY_WKWatchOnly", settings)
+        self.assertNotIn(
+            "INFOPLIST_KEY_WKWatchOnly", self.project["settings"]["base"]
+        )
+
+
 @unittest.skipIf(os.name == "nt", "executable-script probes run in Tier A and Tier B")
 class XcodeGenDeterminismTests(unittest.TestCase):
     def setUp(self) -> None:

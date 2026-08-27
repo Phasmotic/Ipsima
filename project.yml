@@ -76,6 +76,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.schonfeld.talaria.watchkitapp
+        INFOPLIST_KEY_WKCompanionAppBundleIdentifier: dev.schonfeld.talaria.app
         INFOPLIST_KEY_WKRunsIndependentlyOfCompanionApp: YES
         SWIFT_STRICT_CONCURRENCY: complete
 
@@ -107,6 +108,8 @@ targets:
       - Tests/TalariaTests
     dependencies:
       - target: Talaria
+      # Xcode 26 runs App Intents metadata extraction for Swift test bundles too.
+      - sdk: AppIntents.framework
 
   TalariaUITests:
     type: bundle.ui-testing
@@ -115,6 +118,7 @@ targets:
       - Tests/TalariaUITests
     dependencies:
       - target: Talaria
+      - sdk: AppIntents.framework
 
   TalariaWatchUITests:
     type: bundle.ui-testing
@@ -123,6 +127,7 @@ targets:
       - Tests/TalariaWatchUITests
     dependencies:
       - target: TalariaWatch
+      - sdk: AppIntents.framework
 
 schemes:
   Talaria-iOS:
