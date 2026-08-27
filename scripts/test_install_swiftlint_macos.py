@@ -12,6 +12,8 @@ import unittest
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 INSTALLER = REPO / "scripts" / "install_swiftlint_macos.sh"
+PATH_VERIFIER = REPO / "scripts" / "verify_swiftlint_macos_path.sh"
+WORKFLOW = REPO / ".github" / "workflows" / "tier-b.yml"
 TEST_ROOT = REPO / ".gauntlet" / "install-swiftlint-tests"
 
 
@@ -94,6 +96,19 @@ exit 64
             check=False,
         )
 
+    def _verify_path(
+        self, expected: pathlib.Path, path: str
+    ) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["bash", str(PATH_VERIFIER), str(expected)],
+            env={"PATH": path},
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+
     def test_pins_official_0650_artifact_bundle_and_digest(self) -> None:
         source = INSTALLER.read_text(encoding="utf-8")
         self.assertIn('SWIFTLINT_VERSION="0.65.0"', source)
@@ -112,12 +127,84 @@ exit 64
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stderr, "")
         self.assertIn("SwiftLint 0.65.0 sha256:eb333bd", result.stdout)
-        installed = self.root / ".gauntlet" / "tools" / "swiftlint-macos-0.65.0"
+        installed = (
+            self.root
+            / ".gauntlet"
+            / "tools"
+            / "swiftlint-macos-0.65.0"
+            / "swiftlint"
+        )
         self.assertTrue(installed.is_file())
         self.assertTrue(os.access(installed, os.X_OK))
-        self.assertEqual(
-            self.github_path.read_text(encoding="utf-8").strip(),
-            str(installed.parent),
+        published_path = self.github_path.read_text(encoding="utf-8").strip()
+        self.assertEqual(published_path, str(installed.parent))
+        resolved = subprocess.run(
+            ["swiftlint", "version"],
+            env={"PATH": f"{published_path}:/usr/bin:/bin"},
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        self.assertEqual(resolved.returncode, 0, resolved.stderr)
+        self.assertEqual(resolved.stdout, "0.65.0\n")
+        self.assertEqual(resolved.stderr, "")
+        verified = self._verify_path(installed, f"{published_path}:/usr/bin:/bin")
+        self.assertEqual(verified.returncode, 0, verified.stderr)
+        self.assertEqual(verified.stdout, "SwiftLint command path: verified\n")
+        self.assertEqual(verified.stderr, "")
+
+    def test_authoritative_path_binding_rejects_shadow_and_empty_resolution(
+        self,
+    ) -> None:
+        result = self._run()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        installed = (
+            self.root
+            / ".gauntlet"
+            / "tools"
+            / "swiftlint-macos-0.65.0"
+            / "swiftlint"
+        )
+        published_path = self.github_path.read_text(encoding="utf-8").strip()
+        shadow_bin = self.root / "shadow-bin"
+        shadow_bin.mkdir()
+        shadow = shadow_bin / "swiftlint"
+        shadow.write_text(
+            "#!/usr/bin/env bash\nprintf '0.65.0\\n'\n",
+            encoding="utf-8",
+            newline="\n",
+        )
+        shadow.chmod(shadow.stat().st_mode | stat.S_IXUSR)
+
+        shadowed = self._verify_path(
+            installed, f"{shadow_bin}:{published_path}:/usr/bin:/bin"
+        )
+        self.assertEqual(shadowed.returncode, 2)
+        self.assertEqual(shadowed.stdout, "")
+        self.assertIn("resolved outside the verified install", shadowed.stderr)
+
+        missing = self._verify_path(installed, "/usr/bin:/bin")
+        self.assertEqual(missing.returncode, 2)
+        self.assertEqual(missing.stdout, "")
+        self.assertIn("command resolution returned empty evidence", missing.stderr)
+
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn(
+            'SWIFTLINT_EXPECTED="$GITHUB_WORKSPACE/.gauntlet/tools/'
+            'swiftlint-macos-0.65.0/swiftlint"',
+            workflow,
+        )
+        self.assertIn(
+            'bash scripts/verify_swiftlint_macos_path.sh "$SWIFTLINT_EXPECTED"',
+            workflow,
+        )
+        self.assertIn(
+            'SWIFTLINT_ACTUAL="$("$SWIFTLINT_EXPECTED" version)"', workflow
+        )
+        self.assertIn(
+            '"$SWIFTLINT_EXPECTED" --strict --quiet', workflow
         )
 
     def test_checksum_mismatch_blocks_before_install(self) -> None:
@@ -125,7 +212,13 @@ exit 64
         self.assertEqual(result.returncode, 2)
         self.assertIn("checksum mismatch", result.stderr)
         self.assertFalse(
-            (self.root / ".gauntlet" / "tools" / "swiftlint-macos-0.65.0").exists()
+            (
+                self.root
+                / ".gauntlet"
+                / "tools"
+                / "swiftlint-macos-0.65.0"
+                / "swiftlint"
+            ).exists()
         )
 
     def test_empty_extraction_blocks_before_promotion(self) -> None:
@@ -133,11 +226,23 @@ exit 64
         self.assertEqual(result.returncode, 2)
         self.assertIn("empty executable", result.stderr)
         self.assertFalse(
-            (self.root / ".gauntlet" / "tools" / "swiftlint-macos-0.65.0").exists()
+            (
+                self.root
+                / ".gauntlet"
+                / "tools"
+                / "swiftlint-macos-0.65.0"
+                / "swiftlint"
+            ).exists()
         )
 
     def test_preexisting_version_spoof_is_replaced_from_verified_archive(self) -> None:
-        installed = self.root / ".gauntlet" / "tools" / "swiftlint-macos-0.65.0"
+        installed = (
+            self.root
+            / ".gauntlet"
+            / "tools"
+            / "swiftlint-macos-0.65.0"
+            / "swiftlint"
+        )
         installed.parent.mkdir(parents=True)
         installed.write_text(
             "#!/usr/bin/env bash\nprintf '0.65.0\\n' # PRESEEDED_SHIM\n",

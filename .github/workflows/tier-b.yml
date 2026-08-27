@@ -288,8 +288,10 @@ jobs:
       - name: Verify formatter parity and lint (G4, authoritative)
         run: |
           set -euo pipefail
+          SWIFTLINT_EXPECTED="$GITHUB_WORKSPACE/.gauntlet/tools/swiftlint-macos-0.65.0/swiftlint"
+          bash scripts/verify_swiftlint_macos_path.sh "$SWIFTLINT_EXPECTED"
           SWIFTFORMAT_ACTUAL="$(swiftformat --version)"
-          SWIFTLINT_ACTUAL="$(swiftlint version)"
+          SWIFTLINT_ACTUAL="$("$SWIFTLINT_EXPECTED" version)"
           [ "$SWIFTFORMAT_ACTUAL" = "0.62.1" ] || {
             echo "::error::expected SwiftFormat 0.62.1; found ${SWIFTFORMAT_ACTUAL:-unknown}"
             exit 1
@@ -300,7 +302,7 @@ jobs:
           }
           swiftformat --lint --quiet Packages/HermesKit App Tests 2>&1 \
             | tee .gauntlet/g4-swiftformat.log
-          swiftlint --strict --quiet 2>&1 \
+          "$SWIFTLINT_EXPECTED" --strict --quiet 2>&1 \
             | tee .gauntlet/g4-swiftlint.log
 
       # The brief arms all of G12 and does not grant the streaming clause the

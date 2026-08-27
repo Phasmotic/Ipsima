@@ -11,7 +11,8 @@ SWIFTLINT_SHA256="eb333bd76dfb5f46d21fdf3615fe39bb938956ca0b8e94c241c4b2db6e696b
 SWIFTLINT_MEMBER="SwiftLintBinary.artifactbundle/macos/swiftlint"
 TOOLS=".gauntlet/tools"
 ARCHIVE="$TOOLS/swiftlint-macos-$SWIFTLINT_VERSION.zip"
-SWIFTLINT_BIN="$TOOLS/swiftlint-macos-$SWIFTLINT_VERSION"
+INSTALL_ROOT="$TOOLS/swiftlint-macos-$SWIFTLINT_VERSION"
+SWIFTLINT_BIN="$INSTALL_ROOT/swiftlint"
 
 blocked() {
     printf 'SWIFTLINT INSTALL BLOCKED: %s\n' "$1" >&2
@@ -19,6 +20,7 @@ blocked() {
 }
 
 mkdir -p "$TOOLS" || blocked "could not create the tools directory"
+mkdir -p "$INSTALL_ROOT" || blocked "could not create the install directory"
 
 for prerequisite in cat chmod curl dirname mktemp mv rm shasum unzip; do
     command -v "$prerequisite" >/dev/null 2>&1 \
