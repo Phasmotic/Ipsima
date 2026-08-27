@@ -29,6 +29,7 @@ import sys
 import tempfile
 import time
 from typing import Any, Callable
+from urllib import error as urlerror
 from urllib import parse as urlparse
 from urllib import request as urlrequest
 
@@ -585,6 +586,16 @@ def _git_output(root: Path, arguments: list[str]) -> str:
     return result.stdout.strip()
 
 
+def _launcher_path(value: str | os.PathLike[str]) -> Path:
+    """Normalize directory aliases without following the final launcher symlink."""
+
+    path = Path(value).expanduser().absolute()
+    try:
+        return path.parent.resolve(strict=True) / path.name
+    except OSError as error:
+        raise CaptureBlocked("runtime-unavailable") from error
+
+
 def verify_runtime(root: Path, catalog: ProtocolCatalog) -> Runtime:
     try:
         resolved = root.expanduser().resolve(strict=True)
@@ -628,8 +639,8 @@ def verify_runtime(root: Path, catalog: ProtocolCatalog) -> Runtime:
     runtime_python = executable.with_name("python")
     if not runtime_python.is_file() or not os.access(runtime_python, os.X_OK):
         raise CaptureBlocked("runtime-unavailable")
-    current_python = Path(sys.executable).absolute()
-    expected_python = runtime_python.absolute()
+    current_python = _launcher_path(sys.executable)
+    expected_python = _launcher_path(runtime_python)
     try:
         current_prefix = Path(sys.prefix).resolve(strict=True)
         expected_prefix = runtime_python.parent.parent.resolve(strict=True)
@@ -724,6 +735,10 @@ def verify_locked_environment(
     ):
         raise CaptureBlocked("runtime-dirty")
 
+    try:
+        runtime_root = runtime.root.resolve(strict=True)
+    except OSError as error:
+        raise CaptureBlocked("runtime-unavailable") from error
     importlib.invalidate_caches()
     for module_name in RUNTIME_MODULES:
         try:
@@ -731,7 +746,7 @@ def verify_locked_environment(
             if specification is None or specification.origin is None:
                 raise CaptureBlocked("runtime-drift")
             origin = Path(specification.origin).resolve(strict=True)
-            origin.relative_to(runtime.root)
+            origin.relative_to(runtime_root)
         except CaptureBlocked:
             raise
         except (ImportError, ModuleNotFoundError, OSError, ValueError) as error:
@@ -940,6 +955,9 @@ def _http_json(port: int, path: str, session_token: str) -> object:
             raw = response.read(MAX_FRAME_BYTES + 1)
     except CaptureBlocked:
         raise
+    except urlerror.HTTPError as error:
+        error.close()
+        raise CaptureBlocked("ownership-failed") from error
     except Exception as error:
         raise CaptureBlocked("ownership-failed") from error
     if len(raw) > MAX_FRAME_BYTES:
