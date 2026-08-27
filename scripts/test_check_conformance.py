@@ -22,6 +22,9 @@ OUTPUT_NAMES = (
     "ProtocolRequestConformanceTests4.swift",
     "ProtocolEventConformanceTests.swift",
 )
+VALID_SANITIZED_REQUEST = (
+    '{"id":1,"jsonrpc":"2.0","method":"session.list"}'
+)
 
 
 class CheckConformanceTests(unittest.TestCase):
@@ -86,16 +89,161 @@ class CheckConformanceTests(unittest.TestCase):
         )
 
     def write_fixture(self, line: str) -> None:
-        (self.fixtures / "golden.jsonl").write_text(line + "\n", encoding="utf-8")
+        self.write_fixtures(line)
+
+    def write_fixtures(self, *lines: str) -> None:
+        (self.fixtures / "golden.jsonl").write_text(
+            "\n".join(lines) + "\n", encoding="utf-8"
+        )
+
+    def write_fixture_objects(self, *frames: object) -> None:
+        self.write_fixtures(
+            *(
+                json.dumps(
+                    frame,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=False,
+                    allow_nan=False,
+                )
+                for frame in frames
+            )
+        )
 
     def test_valid_baseline_and_cross_namespace_collision_pass(self) -> None:
-        self.write_fixture('{"jsonrpc":"2.0","method":"ping"}')
+        self.write_fixture(VALID_SANITIZED_REQUEST)
         result = self.run_checker()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("catalog requests: 168", result.stdout)
         self.assertIn("catalog events  : 56", result.stdout)
         self.assertIn("generated tests : 224", result.stdout)
         self.assertEqual(result.stdout.splitlines()[-1], "G3: PASS")
+
+    def test_canonical_sanitized_request_event_and_response_pass(self) -> None:
+        self.write_fixture_objects(
+            {
+                "id": 1,
+                "jsonrpc": "2.0",
+                "method": "session.list",
+                "params": {
+                    "field_001": "<redacted>",
+                    "field_002": 0,
+                },
+            },
+            {
+                "jsonrpc": "2.0",
+                "method": "event",
+                "params": {
+                    "payload": {
+                        "field_001": "<redacted>",
+                        "field_002": [False, 0, 0.5, None],
+                    },
+                    "type": "message.delta",
+                },
+            },
+            {
+                "id": 1,
+                "jsonrpc": "2.0",
+                "result": {
+                    "field_001": "<redacted>",
+                    "field_002": 0.5,
+                },
+            },
+        )
+
+        result = self.run_checker()
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("golden frames   : 3", result.stdout)
+        self.assertEqual(result.stdout.splitlines()[-1], "G3: PASS")
+
+    def test_manually_placed_unknown_members_fail_residual_safety_contract(self) -> None:
+        cases = (
+            (
+                {
+                    "jsonrpc": "2.0",
+                    "method": "session.list",
+                    "operator_member": "<redacted>",
+                },
+                "unknown top-level members were not removed",
+            ),
+            (
+                {
+                    "jsonrpc": "2.0",
+                    "method": "session.list",
+                    "params": {"operator_member": "<redacted>"},
+                },
+                "object field names were not normalized",
+            ),
+            (
+                {
+                    "error": {
+                        "code": -32000,
+                        "message": "<redacted>",
+                        "operator_member": "<redacted>",
+                    },
+                    "id": 1,
+                    "jsonrpc": "2.0",
+                },
+                "unknown error members were not removed",
+            ),
+        )
+        for frame, reason in cases:
+            with self.subTest(reason=reason):
+                self.write_fixture_objects(frame)
+                result = self.run_checker()
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn("unsafe golden fixture", result.stdout)
+                self.assertIn(reason, result.stdout)
+                self.assertEqual(result.stdout.splitlines()[-1], "G3: FAIL")
+
+    def test_manually_placed_unsanitized_and_non_normalized_leaves_fail(self) -> None:
+        cases = (
+            ("operator text", "text payload was not redacted"),
+            (True, "boolean payload was not normalized"),
+            (7, "integer payload was not normalized"),
+            (1.25, "floating payload was not normalized"),
+        )
+        for value, reason in cases:
+            with self.subTest(reason=reason):
+                self.write_fixture_objects(
+                    {
+                        "jsonrpc": "2.0",
+                        "method": "session.list",
+                        "params": {"field_001": value},
+                    }
+                )
+                result = self.run_checker()
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn("unsafe golden fixture", result.stdout)
+                self.assertIn(reason, result.stdout)
+                self.assertEqual(result.stdout.splitlines()[-1], "G3: FAIL")
+
+    def test_manual_unknown_method_and_event_type_fail_catalog_contract(self) -> None:
+        cases = (
+            (
+                {"jsonrpc": "2.0", "method": "operator.private"},
+                "request method is outside the pinned catalog",
+            ),
+            (
+                {
+                    "jsonrpc": "2.0",
+                    "method": "event",
+                    "params": {
+                        "payload": {"field_001": "<redacted>"},
+                        "type": "operator.private",
+                    },
+                },
+                "server event type is outside the pinned catalog",
+            ),
+        )
+        for frame, reason in cases:
+            with self.subTest(reason=reason):
+                self.write_fixture_objects(frame)
+                result = self.run_checker()
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn("unsafe golden fixture", result.stdout)
+                self.assertIn(reason, result.stdout)
 
     def test_zero_frames_fail_for_zero_reason(self) -> None:
         result = self.run_checker()
@@ -114,9 +262,9 @@ class CheckConformanceTests(unittest.TestCase):
 
     def test_duplicate_keys_and_nonfinite_numbers_are_invalid_json(self) -> None:
         for frame in (
-            '{"jsonrpc":"2.0","method":"ping","method":"pong"}',
-            '{"jsonrpc":"2.0","method":"ping","params":NaN}',
-            '{"jsonrpc":"2.0","method":"ping","params":Infinity}',
+            '{"jsonrpc":"2.0","method":"session.list","method":"session.create"}',
+            '{"jsonrpc":"2.0","method":"session.list","params":NaN}',
+            '{"jsonrpc":"2.0","method":"session.list","params":Infinity}',
         ):
             self.write_fixture(frame)
             with self.subTest(frame=frame):
@@ -128,7 +276,9 @@ class CheckConformanceTests(unittest.TestCase):
     def test_scalar_or_null_params_fail_json_rpc_shape(self) -> None:
         for params in ("null", "true", "1", '"value"'):
             self.write_fixture(
-                '{"jsonrpc":"2.0","method":"ping","params":' + params + "}"
+                '{"jsonrpc":"2.0","method":"session.list","params":'
+                + params
+                + "}"
             )
             with self.subTest(params=params):
                 result = self.run_checker()
@@ -146,7 +296,7 @@ class CheckConformanceTests(unittest.TestCase):
             ),
             encoding="utf-8",
         )
-        self.write_fixture('{"jsonrpc":"2.0","method":"ping"}')
+        self.write_fixture(VALID_SANITIZED_REQUEST)
 
         result = self.run_checker()
 
@@ -162,7 +312,7 @@ class CheckConformanceTests(unittest.TestCase):
             ),
             encoding="utf-8",
         )
-        self.write_fixture('{"jsonrpc":"2.0","method":"ping"}')
+        self.write_fixture(VALID_SANITIZED_REQUEST)
 
         result = self.run_checker()
 
@@ -179,7 +329,7 @@ class CheckConformanceTests(unittest.TestCase):
             ),
             encoding="utf-8",
         )
-        self.write_fixture('{"jsonrpc":"2.0","method":"ping"}')
+        self.write_fixture(VALID_SANITIZED_REQUEST)
 
         result = self.run_checker()
 
@@ -221,7 +371,7 @@ class CheckConformanceTests(unittest.TestCase):
             ),
             encoding="utf-8",
         )
-        self.write_fixture('{"jsonrpc":"2.0","method":"ping"}')
+        self.write_fixture(VALID_SANITIZED_REQUEST)
 
         result = self.run_checker()
 
@@ -229,7 +379,7 @@ class CheckConformanceTests(unittest.TestCase):
         self.assertIn("request tests do not call", result.stdout)
 
     def test_drift_fails_without_mutating_generated(self) -> None:
-        self.write_fixture('{"jsonrpc":"2.0","method":"ping"}')
+        self.write_fixture(VALID_SANITIZED_REQUEST)
         with self.generated_request.open("ab") as generated:
             generated.write(b"// injected drift\n")
         before = self.generated_request.read_bytes()
@@ -244,7 +394,7 @@ class CheckConformanceTests(unittest.TestCase):
         document = json.loads(self.valid_catalog_text)
         document["requests"].append(document["requests"][-1])
         self.catalog.write_text(json.dumps(document), encoding="utf-8")
-        self.write_fixture('{"jsonrpc":"2.0","method":"ping"}')
+        self.write_fixture(VALID_SANITIZED_REQUEST)
         result = self.run_checker()
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn("duplicate request/event entry", result.stdout)
@@ -257,7 +407,7 @@ class CheckConformanceTests(unittest.TestCase):
             json.dumps(document, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",
         )
-        self.write_fixture('{"jsonrpc":"2.0","method":"ping"}')
+        self.write_fixture(VALID_SANITIZED_REQUEST)
 
         result = self.run_checker()
 
@@ -308,7 +458,7 @@ class CheckConformanceTests(unittest.TestCase):
         )
         for source in cases:
             generator.write_text(source, encoding="utf-8")
-            self.write_fixture('{"jsonrpc":"2.0","method":"ping"}')
+            self.write_fixture(VALID_SANITIZED_REQUEST)
             with self.subTest(source=source):
                 result = self.run_checker()
                 self.assertEqual(result.returncode, 2, result.stdout + result.stderr)

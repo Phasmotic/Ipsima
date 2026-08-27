@@ -26,9 +26,9 @@ import sys
 import tempfile
 from typing import Any
 
-try:
+if __package__:
     from scripts import derive_protocol as derivation
-except ModuleNotFoundError:  # direct execution from a copied scripts directory
+else:  # direct execution from this or a copied scripts directory
     import derive_protocol as derivation  # type: ignore[no-redef]
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
@@ -45,6 +45,9 @@ GENERATED_FILES = (
 )
 GEN_SCRIPT = REPO / "scripts" / "gen_conformance_tests.py"
 CATALOG_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*\Z")
+SANITIZED_FIELD = re.compile(r"field_[0-9]{3}\Z")
+SANITIZED_ID = re.compile(r"id-[1-9][0-9]*\Z")
+REDACTED_TEXT = "<redacted>"
 GENERATED_TEST_BLOCK = re.compile(
     r"^    func (?P<identity>test[ME]_[A-Za-z0-9_]+)\(\) throws \{\n"
     r"        (?P<body>[^\n]+)\n    \}$",
@@ -169,6 +172,104 @@ def envelope_problem(value: object) -> str | None:
     return None
 
 
+def _sanitized_generic_problem(value: object) -> str | None:
+    """Reject any fixture payload that can still carry captured leaf data."""
+
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return None if value is False else "boolean payload was not normalized"
+    if type(value) is int:
+        return None if value == 0 else "integer payload was not normalized"
+    if isinstance(value, float):
+        return None if value == 0.5 else "floating payload was not normalized"
+    if isinstance(value, str):
+        return None if value == REDACTED_TEXT else "text payload was not redacted"
+    if isinstance(value, list):
+        for item in value:
+            problem = _sanitized_generic_problem(item)
+            if problem is not None:
+                return problem
+        return None
+    if isinstance(value, dict):
+        expected = {
+            f"field_{index:03d}" for index in range(1, len(value) + 1)
+        }
+        if set(value) != expected or any(
+            SANITIZED_FIELD.fullmatch(key) is None for key in value
+        ):
+            return "object field names were not normalized"
+        for item in value.values():
+            problem = _sanitized_generic_problem(item)
+            if problem is not None:
+                return problem
+        return None
+    return "payload contains an unsupported value"
+
+
+def sanitized_fixture_problem(
+    value: object,
+    request_names: frozenset[str],
+    event_names: frozenset[str],
+) -> str | None:
+    """Return why a canonical envelope violates the capture redaction contract."""
+
+    if not isinstance(value, dict):
+        return "sanitized fixture root must be an object"
+    allowed_root = {"jsonrpc", "id", "method", "params", "result", "error"}
+    if not set(value).issubset(allowed_root):
+        return "unknown top-level members were not removed"
+    if value.get("jsonrpc") != "2.0":
+        return "jsonrpc marker was not preserved"
+
+    if "id" in value:
+        identifier = value["id"]
+        valid = (
+            identifier is None
+            or (type(identifier) is int and identifier > 0)
+            or (
+                isinstance(identifier, str)
+                and SANITIZED_ID.fullmatch(identifier) is not None
+            )
+        )
+        if not valid:
+            return "JSON-RPC id was not deterministically aliased"
+
+    method = value.get("method")
+    if method == "event":
+        if "id" in value:
+            return "server event retained an id"
+        params = value.get("params")
+        if not isinstance(params, dict) or set(params) != {"payload", "type"}:
+            return "server event params were not reduced to type and payload"
+        event_type = params.get("type")
+        if not isinstance(event_type, str) or event_type not in event_names:
+            return "server event type is outside the pinned catalog"
+        return _sanitized_generic_problem(params["payload"])
+
+    if method is not None:
+        if not isinstance(method, str) or method not in request_names:
+            return "request method is outside the pinned catalog"
+        if "params" in value:
+            return _sanitized_generic_problem(value["params"])
+        return None
+
+    if "result" in value:
+        return _sanitized_generic_problem(value["result"])
+
+    error = value.get("error")
+    if not isinstance(error, dict):
+        return "error response is malformed"
+    allowed_error = {"code", "message", "data"}
+    if not set(error).issubset(allowed_error):
+        return "unknown error members were not removed"
+    if error.get("code") != -32000 or error.get("message") != REDACTED_TEXT:
+        return "error code or message was not normalized"
+    if "data" in error:
+        return _sanitized_generic_problem(error["data"])
+    return None
+
+
 def helper_contract_problem(source: str, template: str, label: str) -> str | None:
     """Bind generated helpers to reviewed executable Swift templates."""
 
@@ -219,6 +320,8 @@ def run_checks() -> int:
         *(("method", entry["name"]) for entry in requests),
         *(("event", entry["name"]) for entry in events),
     ]
+    request_names = frozenset(entry["name"] for entry in requests)
+    event_names = frozenset(entry["name"] for entry in events)
     if any(CATALOG_NAME.fullmatch(name) is None for _, name in catalog_entries):
         raise ConformanceBlocked("protocol catalog contains an unsupported name")
     if len(catalog_entries) != len(set(catalog_entries)):
@@ -252,6 +355,15 @@ def run_checks() -> int:
             if problem is not None:
                 failures.append(
                     f"{fixture.name}:{lineno}: not a JSON-RPC envelope ({problem})"
+                )
+                continue
+            safety_problem = sanitized_fixture_problem(
+                envelope, request_names, event_names
+            )
+            if safety_problem is not None:
+                failures.append(
+                    f"{fixture.name}:{lineno}: unsafe golden fixture "
+                    f"({safety_problem})"
                 )
                 continue
             if canonical(envelope) != raw.encode("utf-8"):

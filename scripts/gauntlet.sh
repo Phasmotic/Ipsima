@@ -659,7 +659,8 @@ PY
 g3() {
     section "G3 · protocol conformance (methods.json <-> golden fixtures)"
     local conformance_rc conformance_marker
-    python3 -B -m unittest scripts.test_check_conformance \
+    python3 -B -m unittest scripts.test_capture_golden \
+        scripts.test_check_conformance \
         scripts.test_derive_protocol \
         >"$ART/g3-selftest.log" 2>&1
     if [ $? -ne 0 ]; then

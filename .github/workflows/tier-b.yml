@@ -39,6 +39,8 @@ jobs:
       - name: Verify Tier B evidence checker failure modes
         run: |
           python3 -B -m unittest \
+            scripts.test_capture_golden \
+            scripts.test_check_conformance \
             scripts.test_check_launch_metrics \
             scripts.test_check_tier_b_run_snapshot \
             scripts.test_check_tier_b_status_log \
