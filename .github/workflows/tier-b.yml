@@ -275,7 +275,7 @@ jobs:
 
       - name: G11 — N/A (no real streaming chat surface to capture)
         run: |
-          status="G11 — N/A (no real streaming chat surface to capture; arms with G14 and G12 streaming on the first real streaming chat surface in P2; ScreenshotMatrixUITests.swift must be rebuilt)"
+          status="G11 — N/A (no real streaming chat surface to capture); arms at the first real streaming chat surface (currently P3) with G14 and G12 streaming; ScreenshotMatrixUITests.swift must be rebuilt"
           printf '%s\n' "$status" | tee .gauntlet/g11-status.txt
           printf '### %s\n' "$status" >> "$GITHUB_STEP_SUMMARY"
 
@@ -307,12 +307,12 @@ jobs:
           "$SWIFTLINT_EXPECTED" --strict --quiet 2>&1 \
             | tee .gauntlet/g4-swiftlint.log
 
-      # The orchestrator ruled that the streaming clause has no subject before
-      # P2: no live stream or UI consumes one. This is N/A, never PASS, and it
-      # arms with G11/G14 on the first real streaming chat surface.
-      - name: G12 streaming responsiveness — N/A (no streaming surface until P2)
+      # No live stream or streaming UI currently exists to measure. This is
+      # N/A, never PASS. G12 streaming arms at the first real streaming chat
+      # surface (currently P3), together with G11 and G14.
+      - name: G12 streaming responsiveness — N/A (no live stream or streaming UI to measure)
         run: |
-          status="G12 streaming responsiveness — N/A (no streaming surface until P2; arms with G11 and G14 on the first real streaming chat surface)"
+          status="G12 streaming responsiveness — N/A (no live stream or streaming UI to measure); arms at the first real streaming chat surface (currently P3) with G11 and G14"
           printf '%s\n' "$status" | tee .gauntlet/g12-streaming-status.txt
           printf '### %s\n' "$status" >> "$GITHUB_STEP_SUMMARY"
 

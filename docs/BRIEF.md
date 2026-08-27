@@ -12,8 +12,9 @@ revise it. Expensive-to-reconstruct findings and evidence belong in the reposito
 or issue rather than only in a conversation. Public evidence must contain repository-relative
 paths only and must exclude local environment details and sensitive data.
 
-The current workstream is the audit repair phase. It must close with every armed gate genuinely
-green before unfinished Phase 0 work resumes. Do not roll into another phase in the same run.
+Audit repair closed at `96df2d0`. The current authorized workstream is to record the revised
+phase plan, derive the outbound-hook notification facts from pinned Hermes source, and land the
+push architecture as an ADR. It must stop before P1 implementation begins.
 
 ### Coordination record
 
@@ -38,17 +39,98 @@ streaming chat, live tool activity, approvals, interruption and steering, sessio
 the mobile-native surfaces described below. It speaks Hermes' real gateway protocol; it is not an
 SSH terminal wrapper or a thin chat-only client.
 
-The planned phases are:
+The product target is a Hermes mobile client with the onboarding, rendering, resilience, and
+system integration quality expected of leading first-party agent clients. A credible adoption
+path by Nous Research is a design goal. Talaria therefore remains MIT-licensed: the protocol
+catalog stays mechanically derivable from pinned Hermes source, and the project must remain
+straightforward to incorporate into an MIT upstream and distribute through the App Store.
+
+The revised phases are:
 
 | Phase | Deliverable |
 | --- | --- |
 | P0 | Repository scaffold, pinned protocol derivation, capture fixture, and trustworthy gates. |
-| P1 | `HermesKit`: codec, transports, domain models, reconnect/replay behavior, approval state machine, and `MockGateway`. |
-| P2 | iOS shell: gateway registry, sessions, streaming chat, tool cards, approvals, steering, model selection, and rich rendering. |
-| P3 | Mobile parity surfaces: artifacts, files, terminal, scheduled work, skills and MCP, configuration, search/branching, subagents, context, and voice. |
-| P4 | iOS-native integrations: Live Activity, Dynamic Island, widgets, App Intents, sharing, and notification abstraction. |
-| P5 | watchOS app and complications: status, approve/deny, dictation, widgets, relevance, and phone connectivity. |
-| P6 | Signing and distribution. Hard-gated; see below. |
+| P1 | `HermesKit`: protocol and transport foundations, including a durable offline outbox and TLS TOFU trust store. |
+| P2 | Connection and first run: fast pairing, discovery, authentication, trust acceptance, secure storage, and multi-gateway profiles. |
+| P3 | Chat and approvals: streaming sessions, safe approvals, steering, high-quality rendering, attachments, and localization foundations. |
+| P4 | Notifications, background execution, and system integration, based on a source-derived outbound-hook contract and a pre-code push ADR. |
+| P5 | Parity surfaces and iPad: artifacts, files, terminal, scheduled work, skills and MCP, configuration, branching, subagents, and voice. |
+| P6 | watchOS app, complications, relevance, and phone-independent networking fallback. |
+| P7 | Signing, distribution, and the upstream-adoption package. Hard-gated; see below. |
+
+### P1 — HermesKit
+
+P1 retains the codec, WebSocket and REST/SSE transports, domain models, reconnect and replay
+behavior, approval state machine, and `MockGateway`. It also owns two mobile transport
+requirements:
+
+- A durable offline outbox queues user messages composed without connectivity and sends them on
+  reconnect. `replay_epoch` recovers a dropped stream; the outbox separately preserves a dropped
+  user intent.
+- A TLS trust store implements trust on first use for self-signed homelab gateways: pin the
+  certificate, display its fingerprint, and require explicit acceptance. Plain HTTP is not an
+  escape hatch.
+
+### P2 — Connection and first run
+
+P2 makes connection a product surface rather than a chat prerequisite. It includes QR pairing,
+mDNS/Bonjour discovery, Nous Portal OAuth for Hermes Cloud, manual entry as fallback rather than
+default, TOFU fingerprint review and acceptance, Keychain storage, a biometric gate on the
+connection list, an explanatory path for a first-time user with no gateway, and a multi-gateway
+registry with per-gateway profile rosters.
+
+P2 acceptance is demonstrable: a new user connects in under 60 seconds without typing a URL. If
+that cannot be shown, P2 is not complete.
+
+### P3 — Chat and approvals
+
+P3 includes the session list, streaming chat, collapsible tool cards, interruption and steering,
+model selection, context and token meters, a YOLO toggle, and genuinely high-quality Markdown,
+syntax-highlighted code, and diff rendering. Approval prompts are biometric-gated, show the full
+untruncated command, default safely to deny, and expose their timeout.
+
+Attachment support must be derived from the pinned WebSocket source before implementation; the
+REST surface's inline-image limitation must not be assumed to apply to WebSocket. Localization
+scaffolding begins here, with no hardcoded user-facing strings.
+
+Each of G11, G14, and G12 streaming **arms at the first real streaming chat surface (currently
+P3)**. The condition is authoritative; the phase number is only the current plan location.
+
+### P4 — Notifications, background, and system integration
+
+Before P4 code, pinned Hermes source must establish whether `hooks.outbound` can subscribe to
+`pre_approval_request`, and `docs/PROTOCOL.md` must record the outbound webhook body and signing
+format. If stock Hermes supports the event, the user points `hooks.outbound` at an external relay
+and the app registers its APNs token directly with that relay; Hermes never handles device
+tokens. If it does not, record the exact source limitation for a possible generic upstream
+contribution after P3—do not open it yet, fork Hermes, or patch Hermes locally.
+
+The complete push design must be accepted as an ADR before implementation. Push payloads are
+contentless and contain only an opaque run or session identifier; the app wakes and fetches
+details from the user's gateway over TLS. The relay stays outside Hermes because it holds the
+APNs signing key bound to Talaria's bundle identifier, and it never receives command text.
+
+P4 also includes Live Activity and Dynamic Island status for an in-flight run, approval
+notifications, background refresh and foreground reconciliation, home and lock-screen widgets,
+App Intents, Shortcuts, Action Button quick prompt, and the Share extension.
+
+### P5 — Parity surfaces and iPad
+
+P5 includes the artifacts gallery, file browser, `/api/pty` terminal, cron jobs, skills and MCP
+toggles, configuration editor, session search/fork/branch, subagent monitor, and voice. It adds
+deliberate iPad layouts for the terminal, files, artifacts, and diff-heavy surfaces.
+
+### P6 — watchOS
+
+P6 includes the watch app for approve/deny, session status, and dictated prompts; WidgetKit
+accessory widgets; Smart Stack relevance; WatchConnectivity; and an independent networking
+fallback.
+
+### P7 — Distribution and adoption
+
+P7 remains hard-gated. In addition to signing and distribution, it includes a screenshot-led
+README, `CONTRIBUTING.md`, an explicit welcome for upstream adoption, and a prominent explanation
+that the protocol catalog tracks a pinned Hermes commit and can be re-derived mechanically.
 
 Desktop-only worktree management, theme installation, HUD behavior, and bot-mode group rooms are
 deliberately outside product scope.
@@ -133,11 +215,13 @@ G12 cold launch is armed during audit repair. Its first closure measurement was 
 against the strict `<3.0s` budget; the single permitted retry passed at 2.863 seconds over five
 samples. The threshold and measurement contract remain unchanged.
 
-By explicit orchestrator ruling, **G12 streaming is `N/A (no streaming surface until P2)`**.
-Before P2 there is no live stream and no UI consuming one, so the clause has no subject. N/A is
-not PASS, a waiver, a deferral, or permission to build a synthetic codec benchmark and describe
-it as UI responsiveness. G12 streaming arms with G11 and G14 on the first real streaming chat
-surface in P2. P2 is not complete until all three gates are armed and genuinely green.
+By explicit orchestrator ruling, **G12 streaming is
+`N/A (no live stream or streaming UI to measure)`**. The clause has no subject before a real
+streaming chat surface exists. N/A is not PASS, a waiver, a deferral, or permission to build a
+synthetic codec benchmark and describe it as UI responsiveness. Each of G12 streaming, G11, and
+G14 **arms at the first real streaming chat surface (currently P3)**. The condition is authoritative;
+the phase number records only its present plan location. The phase containing that surface cannot
+close until all three gates are armed and genuinely green.
 
 ### Tier C — judgement
 
@@ -147,13 +231,13 @@ surface in P2. P2 is not complete until all three gates are armed and genuinely 
 | G15 | The owner accepts the visual result. |
 
 G11 is `N/A (no real streaming chat surface to capture)`, and G14 is
-`N/A (no G11 images to review before that arm point)`. Together with G12 streaming, both arm on
-the first real streaming chat surface in P2. The earlier scaffold removed
+`N/A (no G11 images to review before that arm point)`. Each of G11, G14, and G12 streaming
+**arms at the first real streaming chat surface (currently P3)**. The earlier scaffold removed
 `Tests/TalariaUITests/ScreenshotMatrixUITests.swift`; rebuilding that test and its required
-light/dark, device-size, and Dynamic Type matrix is an explicit P2 prerequisite, not a matter of
-merely re-enabling a dormant test. P2 is not complete until G11, G14, and G12 streaming are all
-armed and green. Phase activation is not a deferral, and an armed gate cannot later be called N/A
-to close a phase.
+light/dark, device-size, and Dynamic Type matrix is an explicit prerequisite at that arm point,
+not a matter of merely re-enabling a dormant test. The phase containing that surface cannot close
+until G11, G14, and G12 streaming are all armed and green. Phase activation is not a deferral,
+and an armed gate cannot later be called N/A to close a phase.
 
 ## The convergence loop
 
@@ -167,7 +251,7 @@ Every repair or phase objective uses one loop pass. A phase has a hard maximum o
    checkpoint is allowed only under the named-failure rule in `docs/GOVERNANCE.md`.
 6. Dispatch and follow Tier B.
 7. If red, inspect the bound failing evidence, fix, and return to step 3.
-8. At the first real streaming chat surface in P2, rebuild
+8. At the first real streaming chat surface (currently P3), rebuild
    `Tests/TalariaUITests/ScreenshotMatrixUITests.swift`, arm G11/G14/G12-streaming, and obtain the
    G11 screenshot artifact.
 9. Inspect every image and record the G14 verdict.
@@ -221,12 +305,13 @@ work in this order; do not combine these steps with audit repair:
 3. Update draft pull request #1 with an evidence table for every gate. Mark G11
    `N/A (no real streaming chat surface to capture)`, G14
    `N/A (no G11 images to review before that arm point)`, and G12 streaming
-   `N/A (no streaming surface until P2)` rather than PASS. Retain the sanitized historical
+   `N/A (no live stream or streaming UI to measure)` rather than PASS. State that each gate
+   arms at the first real streaming chat surface (currently P3). Retain the sanitized historical
    disclosures about the first-session profile-scoping discrepancy and the earlier
    orphaned-backend reap.
 4. Only after every armed Phase 0 gate is genuinely green, emit
    `GAUNTLET GREEN — PHASE 0` on its own line and stop. Do not begin P1 in that run.
 
-P6 is hard-gated. Do not begin signing, account configuration, or distribution work until the
-owner explicitly authorizes P6 and the required distribution credential is provisioned through
+P7 is hard-gated. Do not begin signing, account configuration, or distribution work until the
+owner explicitly authorizes P7 and the required distribution credential is provisioned through
 repository secrets. No earlier phase or general build authorization implies that permission.

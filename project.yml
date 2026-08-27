@@ -15,7 +15,7 @@ settings:
     GENERATE_INFOPLIST_FILE: YES
     CURRENT_PROJECT_VERSION: "1"
     MARKETING_VERSION: "1.0"
-    # Tier B builds are simulator/archive-only until P6 (hard-gated).
+    # Tier B builds are simulator/archive-only until P7 (hard-gated).
     CODE_SIGNING_ALLOWED: NO
 
 packages:

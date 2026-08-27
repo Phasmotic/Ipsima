@@ -125,7 +125,7 @@ class G12ContractTests(unittest.TestCase):
         g4 = workflow.index("Verify formatter parity and lint (G4, authoritative)")
         step_header = (
             "      - name: G12 streaming responsiveness — N/A "
-            "(no streaming surface until P2)"
+            "(no live stream or streaming UI to measure)"
         )
         reporter_header = "      - name: Emit Tier B job status"
         self.assertEqual(ios.count("      - name: G12 streaming responsiveness"), 1)
@@ -136,8 +136,8 @@ class G12ContractTests(unittest.TestCase):
             f"{step_header}\n"
             "        run: |\n"
             '          status="G12 streaming responsiveness — N/A '
-            "(no streaming surface until P2; arms with G11 and G14 on the first "
-            'real streaming chat surface)"\n'
+            "(no live stream or streaming UI to measure); arms at the first real "
+            'streaming chat surface (currently P3) with G11 and G14"\n'
             "          printf '%s\\n' \"$status\" | tee "
             ".gauntlet/g12-streaming-status.txt\n"
             "          printf '### %s\\n' \"$status\" >> "
@@ -162,19 +162,34 @@ class G12ContractTests(unittest.TestCase):
         workflow = WORKFLOW.read_text(encoding="utf-8")
 
         for source in (brief, governance):
+            normalized = " ".join(source.split())
             self.assertIn("G12 streaming", source)
             self.assertIn("G11", source)
             self.assertIn("G14", source)
-            self.assertIn("first real streaming chat surface", source)
+            self.assertIn(
+                "arms at the first real streaming chat surface (currently P3)",
+                normalized,
+            )
             self.assertIn("ScreenshotMatrixUITests.swift", source)
             self.assertIn("rebuild", source.lower())
-            self.assertIn("P2 is not complete", source)
+            self.assertIn(
+                "phase containing that surface cannot close until all three",
+                normalized.lower(),
+            )
             self.assertIn(
                 "N/A (no real streaming chat surface to capture)", source
             )
             self.assertIn(
                 "N/A (no G11 images to review before that arm point)", source
             )
+            self.assertIn(
+                "N/A (no live stream or streaming UI to measure)", source
+            )
+
+        for source in (brief, governance, workflow):
+            self.assertNotIn("no streaming surface until P2", source)
+            self.assertNotIn("first real streaming chat surface in P2", source)
+            self.assertNotIn("P2 is not complete until all three", source)
 
         self.assertIn(
             "enumerate every N/A gate by name and reason",
@@ -182,6 +197,10 @@ class G12ContractTests(unittest.TestCase):
         )
         self.assertIn(
             "G11 — N/A (no real streaming chat surface to capture", workflow
+        )
+        self.assertIn(
+            "arms at the first real streaming chat surface (currently P3)",
+            workflow,
         )
         self.assertIn("ScreenshotMatrixUITests.swift must be rebuilt", workflow)
 

@@ -1,5 +1,33 @@
 # Talaria governance
 
+## Phase plan boundaries
+
+The phase plan is ordered and condition-gated. Renumbering a phase does not change a gate's arm
+condition or authorize work from another phase.
+
+| Phase | Governed boundary |
+| --- | --- |
+| P0 | Establish the repository scaffold, source-pinned protocol derivation, safe capture fixture, and trustworthy gates. |
+| P1 | Build `HermesKit`, including the durable offline outbox and TLS TOFU trust store; no app-surface implementation is implied. |
+| P2 | Deliver connection and first run; demonstrate a new user connecting in under 60 seconds without typing a URL. |
+| P3 | Deliver chat and approvals; derive attachment capability from pinned WebSocket source before implementation; arm the streaming-surface gates at their condition. |
+| P4 | Deliver notifications, background behavior, and system integrations only after the outbound-hook facts and push ADR are recorded. |
+| P5 | Deliver parity surfaces and deliberate iPad layouts. |
+| P6 | Deliver watchOS, including WatchConnectivity and an independent networking fallback. |
+| P7 | Perform signing, distribution, and the adoption package only with explicit owner authorization and provisioned credentials. |
+
+P4 has a pre-code source gate. Pinned Hermes source must establish whether `hooks.outbound` can
+subscribe to `pre_approval_request`, and `docs/PROTOCOL.md` must record the webhook body and
+signing format. If stock Hermes supports it, device tokens go directly from Talaria to an
+external relay and never through Hermes. If it does not, record the exact limitation for a
+possible generic upstream contribution after P3; do not open that contribution, fork Hermes, or
+patch Hermes locally during the earlier phases.
+
+The P4 ADR must precede implementation. Push payloads are contentless—only an opaque run or
+session identifier—and Talaria fetches details from the user's gateway over TLS. The relay stays
+outside Hermes because it holds Talaria's bundle-bound APNs signing key and must never receive
+command text.
+
 ## Gate integrity
 
 A gate is never weakened to make it pass. Missing prerequisites and indeterminate results are
@@ -24,15 +52,18 @@ execution.
 
 Phase activation is not a deferral. G11 is `N/A (no real streaming chat surface to capture)`;
 G14 is `N/A (no G11 images to review before that arm point)`; and, by explicit orchestrator
-ruling, G12 streaming is `N/A (no streaming surface until P2)`. None is passing, waived, deferred,
-or skipped. All three arm on the first real streaming chat surface in P2, and ordinary work cannot
-return an armed gate to N/A. P2 is not complete until all three are armed and genuinely green.
+ruling, G12 streaming is `N/A (no live stream or streaming UI to measure)`. None is passing,
+waived, deferred, or skipped. Each gate **arms at the first real streaming chat surface (currently
+P3)**, and ordinary work cannot return an armed gate to N/A. The condition is authoritative; the
+phase number records only its current plan location. The phase containing that
+surface cannot close until all three are armed and genuinely green.
 
 `Tests/TalariaUITests/ScreenshotMatrixUITests.swift` was removed with the pre-product scaffold.
 Rebuilding that test and its light/dark, device-size, and Dynamic Type artifact matrix is an
-explicit prerequisite at the P2 arm point; G11 cannot be merely re-enabled because no dormant
-test remains. A synthetic streaming harness is prohibited before P2: measuring codec work without
-a real streaming UI would not test G12's main-thread responsiveness contract.
+explicit prerequisite at that arm point; G11 cannot be merely re-enabled because no dormant test
+remains. A synthetic streaming harness is prohibited before a real streaming chat surface exists:
+measuring codec work without a real streaming UI would not test G12's main-thread responsiveness
+contract.
 
 ## Capture and publication safety
 
