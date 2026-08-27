@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate the Xcode project twice and compare the resulting byte trees."""
+"""Generate every XcodeGen artifact twice and compare the resulting byte trees."""
 
 from __future__ import annotations
 
@@ -15,6 +15,13 @@ from typing import Dict, Iterable, List, Tuple
 
 
 PROJECT_NAME = "Talaria.xcodeproj"
+GENERATED_PLIST_DIRECTORY = Path(".gauntlet/generated")
+GENERATED_PLISTS = (
+    GENERATED_PLIST_DIRECTORY / "TalariaWatchWidgets-Info.plist",
+    GENERATED_PLIST_DIRECTORY / "TalariaWidgets-Info.plist",
+)
+EXPECTED_OUTPUTS = (Path(PROJECT_NAME),) + GENERATED_PLISTS
+EXPECTED_OUTPUT_DIRECTORIES = (Path(".gauntlet"), GENERATED_PLIST_DIRECTORY)
 EXCLUDED_DIRECTORIES = {
     ".build",
     ".gauntlet",
@@ -85,59 +92,162 @@ def run_xcodegen(xcodegen: str, checkout: Path, ordinal: int) -> None:
     raise GenerationFailed("XcodeGen generation failed")
 
 
-def tree_manifest(root: Path) -> Tuple[str, Dict[str, str]]:
-    """Hash relative paths, entry types, symlink targets, and file bytes."""
+def tree_manifest(repository: Path, roots: Iterable[Path]) -> Tuple[str, Dict[str, str]]:
+    """Hash named output roots, their entry types, symlinks, and file bytes."""
     digest = hashlib.sha256()
     entries: Dict[str, str] = {}
+    content_by_path: Dict[str, Tuple[str, bytes]] = {}
 
-    for directory, directory_names, file_names in os.walk(root, followlinks=False):
-        directory_names.sort()
-        file_names.sort()
-        current = Path(directory)
+    def add_path(path: Path) -> None:
+        relative = path.relative_to(repository).as_posix()
+        if path.is_symlink():
+            marker = "L"
+            content = os.readlink(path).encode("utf-8")
+        elif path.is_dir():
+            marker = "D"
+            content = b""
+        else:
+            marker = "F"
+            content = path.read_bytes()
+        content_by_path[relative] = (marker, content)
 
-        for name in list(directory_names):
-            path = current / name
-            relative = path.relative_to(root).as_posix()
-            if path.is_symlink():
-                target = os.readlink(path)
-                item_digest = hashlib.sha256(target.encode("utf-8")).hexdigest()
-                marker = "L"
-                entries[relative] = "{} {}".format(marker, item_digest)
-                digest.update(marker.encode("ascii"))
-                digest.update(b"\0")
-                digest.update(relative.encode("utf-8"))
-                digest.update(b"\0")
-                digest.update(target.encode("utf-8"))
-                digest.update(b"\0")
-                directory_names.remove(name)
-            else:
-                entries[relative] = "D"
-                digest.update(b"D\0")
-                digest.update(relative.encode("utf-8"))
-                digest.update(b"\0")
+    for relative_root in roots:
+        root = repository / relative_root
+        add_path(root)
+        if root.is_symlink() or not root.is_dir():
+            continue
 
-        for name in file_names:
-            path = current / name
-            relative = path.relative_to(root).as_posix()
-            if path.is_symlink():
-                target = os.readlink(path)
-                item_digest = hashlib.sha256(target.encode("utf-8")).hexdigest()
-                marker = "L"
-                content = target.encode("utf-8")
-            else:
-                content = path.read_bytes()
-                item_digest = hashlib.sha256(content).hexdigest()
-                marker = "F"
+        for directory, directory_names, file_names in os.walk(root, followlinks=False):
+            directory_names.sort()
+            file_names.sort()
+            current = Path(directory)
+            for name in list(directory_names):
+                path = current / name
+                add_path(path)
+                if path.is_symlink():
+                    directory_names.remove(name)
+            for name in file_names:
+                add_path(current / name)
 
-            entries[relative] = "{} {}".format(marker, item_digest)
-            digest.update(marker.encode("ascii"))
-            digest.update(b"\0")
-            digest.update(relative.encode("utf-8"))
-            digest.update(b"\0")
-            digest.update(content)
-            digest.update(b"\0")
+    for relative in sorted(content_by_path):
+        marker, content = content_by_path[relative]
+        if marker == "D":
+            entries[relative] = marker
+        else:
+            entries[relative] = "{} {}".format(
+                marker, hashlib.sha256(content).hexdigest()
+            )
+        digest.update(marker.encode("ascii"))
+        digest.update(b"\0")
+        digest.update(relative.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(content)
+        digest.update(b"\0")
 
     return digest.hexdigest(), entries
+
+
+def validate_generated_outputs(checkout: Path, ordinal: int) -> bool:
+    """Require the complete, exact XcodeGen output set using relative diagnostics."""
+    generated_projects = sorted(
+        path.relative_to(checkout).as_posix()
+        for path in checkout.rglob("*.xcodeproj")
+    )
+    project = checkout / PROJECT_NAME
+    if (
+        generated_projects != [PROJECT_NAME]
+        or not project.is_dir()
+        or project.is_symlink()
+    ):
+        print(
+            "ERROR: generation {} created an unexpected project set: {}".format(
+                ordinal, generated_projects
+            ),
+            file=sys.stderr,
+        )
+        return False
+
+    generated_directory = checkout / GENERATED_PLIST_DIRECTORY
+    if not generated_directory.is_dir() or generated_directory.is_symlink():
+        print(
+            "ERROR: generation {} did not create output directory {}".format(
+                ordinal, GENERATED_PLIST_DIRECTORY.as_posix()
+            ),
+            file=sys.stderr,
+        )
+        return False
+
+    expected = {path.as_posix() for path in GENERATED_PLISTS}
+    observed = {
+        path.relative_to(checkout).as_posix()
+        for path in generated_directory.rglob("*")
+    }
+    invalid_types = sorted(
+        path.as_posix()
+        for path in GENERATED_PLISTS
+        if (checkout / path).is_symlink() or not (checkout / path).is_file()
+    )
+    if observed != expected or invalid_types:
+        print(
+            "ERROR: generation {} created an unexpected generated plist set".format(
+                ordinal
+            ),
+            file=sys.stderr,
+        )
+        missing = sorted(expected - observed)
+        unexpected = sorted(observed - expected)
+        if missing:
+            print("  missing: {}".format(", ".join(missing)), file=sys.stderr)
+        if unexpected:
+            print(
+                "  unexpected: {}".format(", ".join(unexpected)),
+                file=sys.stderr,
+            )
+        if invalid_types:
+            print(
+                "  not regular files: {}".format(", ".join(invalid_types)),
+                file=sys.stderr,
+            )
+        return False
+
+    return True
+
+
+def validate_no_unexpected_changes(
+    before: Dict[str, str], after: Dict[str, str], ordinal: int
+) -> bool:
+    """Reject every checkout change outside the exact generated output paths."""
+    exact_paths = {
+        path.as_posix() for path in EXPECTED_OUTPUTS + EXPECTED_OUTPUT_DIRECTORIES
+    }
+
+    def is_expected_output(relative: str) -> bool:
+        return relative in exact_paths or relative.startswith(PROJECT_NAME + "/")
+
+    changed = sorted(
+        relative
+        for relative in set(before) | set(after)
+        if before.get(relative) != after.get(relative)
+        and not is_expected_output(relative)
+    )
+    if not changed:
+        return True
+
+    print(
+        "ERROR: generation {} changed paths outside the exact output set".format(
+            ordinal
+        ),
+        file=sys.stderr,
+    )
+    for relative in changed:
+        if relative not in before:
+            detail = "added"
+        elif relative not in after:
+            detail = "removed"
+        else:
+            detail = "content or entry type changed"
+        print("  {}: {}".format(relative, detail), file=sys.stderr)
+    return False
 
 
 def describe_difference(first: Dict[str, str], second: Dict[str, str]) -> None:
@@ -164,7 +274,7 @@ def resolve_executable(value: str) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Verify that XcodeGen emits an identical Talaria.xcodeproj twice."
+        description="Verify that XcodeGen emits an identical complete output set twice."
     )
     parser.add_argument(
         "--xcodegen",
@@ -199,27 +309,25 @@ def main() -> int:
                     symlinks=True,
                 )
 
-            projects = []
+            generated_checkouts = []
             for ordinal, checkout in enumerate(checkouts, start=1):
+                _, before_generation = tree_manifest(checkout, (Path("."),))
                 run_xcodegen(xcodegen, checkout, ordinal)
-                project = checkout / PROJECT_NAME
-                generated_projects = sorted(
-                    path.relative_to(checkout).as_posix()
-                    for path in checkout.rglob("*.xcodeproj")
-                    if path.is_dir()
-                )
-                if generated_projects != [PROJECT_NAME] or not project.is_dir():
-                    print(
-                        "ERROR: generation {} created an unexpected project set: {}".format(
-                            ordinal, generated_projects
-                        ),
-                        file=sys.stderr,
-                    )
+                if not validate_generated_outputs(checkout, ordinal):
                     return 1
-                projects.append(project)
+                _, after_generation = tree_manifest(checkout, (Path("."),))
+                if not validate_no_unexpected_changes(
+                    before_generation, after_generation, ordinal
+                ):
+                    return 1
+                generated_checkouts.append(checkout)
 
-            first_hash, first_manifest = tree_manifest(projects[0])
-            second_hash, second_manifest = tree_manifest(projects[1])
+            first_hash, first_manifest = tree_manifest(
+                generated_checkouts[0], EXPECTED_OUTPUTS
+            )
+            second_hash, second_manifest = tree_manifest(
+                generated_checkouts[1], EXPECTED_OUTPUTS
+            )
     except GenerationFailed:
         return 1
     except PrerequisiteBlocked:
@@ -235,7 +343,11 @@ def main() -> int:
         describe_difference(first_manifest, second_manifest)
         return 1
 
-    print("XcodeGen deterministic: {} ({})".format(PROJECT_NAME, first_hash))
+    print(
+        "XcodeGen deterministic: {} plus {} generated plists ({})".format(
+            PROJECT_NAME, len(GENERATED_PLISTS), first_hash
+        )
+    )
     return 0
 
 

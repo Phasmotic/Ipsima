@@ -1,9 +1,15 @@
 name: tier-b
+run-name: "Talaria Tier B: ${{ inputs.correlation_token }}"
 # Tier B gauntlet — macOS hardware gates (G7–G13).
 # Dispatched by scripts/gauntlet.sh --tier-b. A red Tier A checkpoint may request a
 # diagnostic run, but can never emit GAUNTLET GREEN; no job continues on error.
 on:
   workflow_dispatch:
+    inputs:
+      correlation_token:
+        description: Public, non-secret token binding this run to one gauntlet dispatch
+        required: true
+        type: string
 
 concurrency:
   group: tier-b-${{ github.ref }}

@@ -19,6 +19,7 @@ class XcodeGenDeterminismTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory(prefix="talaria-g6-test-")
         self.repository = Path(self.temporary.name)
         (self.repository / "project.yml").write_text("name: Talaria\n", encoding="utf-8")
+        (self.repository / "App").mkdir()
         self.mode = self.repository / "mode.txt"
         self.mode.write_text("stable\n", encoding="utf-8", newline="\n")
         self.fake = self.repository / "fake-xcodegen"
@@ -32,6 +33,9 @@ class XcodeGenDeterminismTests(unittest.TestCase):
                 mode = (Path(__file__).parent / "mode.txt").read_text(encoding="utf-8").strip()
                 if mode == "fail":
                     raise SystemExit(7)
+                if mode == "fail-path":
+                    print(Path.cwd(), file=sys.stderr)
+                    raise SystemExit(7)
 
                 project = Path.cwd() / "Talaria.xcodeproj"
                 project.mkdir()
@@ -39,6 +43,29 @@ class XcodeGenDeterminismTests(unittest.TestCase):
                 if mode == "different":
                     content = Path.cwd().name
                 (project / "project.pbxproj").write_text(content, encoding="utf-8")
+
+                generated = Path.cwd() / ".gauntlet" / "generated"
+                generated.mkdir(parents=True)
+                plist_names = (
+                    "TalariaWatchWidgets-Info.plist",
+                    "TalariaWidgets-Info.plist",
+                )
+                for name in plist_names:
+                    if mode == "missing-plist" and name == plist_names[0]:
+                        continue
+                    plist_content = "stable"
+                    if mode == "different-plist" and name == plist_names[0]:
+                        plist_content = Path.cwd().name
+                    (generated / name).write_text(plist_content, encoding="utf-8")
+
+                if mode == "extra-plist":
+                    (generated / "Unexpected-Info.plist").write_text(
+                        "unexpected", encoding="utf-8"
+                    )
+                if mode == "extra-output":
+                    (Path.cwd() / "App" / "Unexpected.plist").write_text(
+                        "unexpected", encoding="utf-8"
+                    )
                 if mode == "extra":
                     (Path.cwd() / "Other.xcodeproj").mkdir()
                 """
@@ -73,6 +100,7 @@ class XcodeGenDeterminismTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("XcodeGen deterministic", result.stdout)
+        self.assertIn("plus 2 generated plists", result.stdout)
         self.assertEqual(before, after)
         self.assertFalse((self.repository / "Talaria.xcodeproj").exists())
 
@@ -81,13 +109,57 @@ class XcodeGenDeterminismTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn("output is not deterministic", result.stderr)
-        self.assertIn("project.pbxproj", result.stderr)
+        self.assertIn("Talaria.xcodeproj/project.pbxproj", result.stderr)
+
+    def test_different_generated_plist_bytes_fail(self) -> None:
+        result = self.run_checker("different-plist")
+
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("output is not deterministic", result.stderr)
+        self.assertIn(
+            ".gauntlet/generated/TalariaWatchWidgets-Info.plist", result.stderr
+        )
+
+    def test_missing_generated_plist_fails(self) -> None:
+        result = self.run_checker("missing-plist")
+
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("unexpected generated plist set", result.stderr)
+        self.assertIn(
+            "missing: .gauntlet/generated/TalariaWatchWidgets-Info.plist",
+            result.stderr,
+        )
+
+    def test_unexpected_generated_plist_fails(self) -> None:
+        result = self.run_checker("extra-plist")
+
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("unexpected generated plist set", result.stderr)
+        self.assertIn(
+            "unexpected: .gauntlet/generated/Unexpected-Info.plist",
+            result.stderr,
+        )
+
+    def test_generated_file_outside_exact_output_set_fails(self) -> None:
+        result = self.run_checker("extra-output")
+
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("changed paths outside the exact output set", result.stderr)
+        self.assertIn("App/Unexpected.plist: added", result.stderr)
+        self.assertNotIn(str(self.repository), result.stderr)
 
     def test_generator_rejection_is_a_gate_failure(self) -> None:
         result = self.run_checker("fail")
 
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn("generation 1 failed with exit code 7", result.stderr)
+
+    def test_generator_diagnostic_sanitizes_temporary_checkout_path(self) -> None:
+        result = self.run_checker("fail-path")
+
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("<temporary-checkout>", result.stderr)
+        self.assertNotIn("talaria-xcodegen-", result.stderr)
 
     def test_unavailable_executable_is_blocked(self) -> None:
         result = self.run_checker("stable", self.repository / "missing-xcodegen")

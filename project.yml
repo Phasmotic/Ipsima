@@ -42,12 +42,18 @@ targets:
   TalariaWidgets:
     type: app-extension
     platform: iOS
+    info:
+      path: .gauntlet/generated/TalariaWidgets-Info.plist
+      properties:
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
     sources:
       - App/TalariaWidgets
     dependencies:
       - package: HermesKit
     settings:
       base:
+        GENERATE_INFOPLIST_FILE: NO
         PRODUCT_BUNDLE_IDENTIFIER: dev.schonfeld.talaria.app.widgets
         TARGETED_DEVICE_FAMILY: "1"
         SKIP_INSTALL: YES
@@ -72,12 +78,18 @@ targets:
   TalariaWatchWidgets:
     type: app-extension
     platform: watchOS
+    info:
+      path: .gauntlet/generated/TalariaWatchWidgets-Info.plist
+      properties:
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
     sources:
       - App/TalariaWatchWidgets
     dependencies:
       - package: HermesKit
     settings:
       base:
+        GENERATE_INFOPLIST_FILE: NO
         PRODUCT_BUNDLE_IDENTIFIER: dev.schonfeld.talaria.watchkitapp.widgets
         SKIP_INSTALL: YES
         SWIFT_STRICT_CONCURRENCY: complete

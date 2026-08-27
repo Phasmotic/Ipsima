@@ -41,6 +41,7 @@ GITLEAKS_VERSION="8.30.1"
 GITLEAKS_URL="https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz"
 GITLEAKS_SHA256="551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
 XCODEGEN_VERSION="2.46.0"
+TIER_B_REPOSITORY="markschonfeld/Talaria"
 KIT="Packages/HermesKit"
 TOOLS="$ART/tools"
 
@@ -48,6 +49,13 @@ blocked_preflight() {
     printf 'GAUNTLET BLOCKED — %s\n' "$1" >&2
     exit 1
 }
+
+STATUS_HELPERS="$ROOT/scripts/gauntlet_status.sh"
+[ -r "$STATUS_HELPERS" ] \
+    || blocked_preflight "gate status classifiers are unavailable"
+# shellcheck source=gauntlet_status.sh
+source "$STATUS_HELPERS" \
+    || blocked_preflight "gate status classifiers could not be loaded"
 
 [ "${TALARIA_GAUNTLET_ENTRY:-}" = "$EXPECTED_ENTRY" ] \
     || blocked_preflight "launch with pwsh -File scripts/gauntlet.ps1"
@@ -313,8 +321,16 @@ g3() {
 g4() {
     section "G4 · swift-format --lint + SwiftLint --strict"
     local arch prerequisite archive part actual format_rc lint_rc version_rc
+    local report_rc violation_count stderr_state
     local swiftformat_bin="$TOOLS/swiftformat-$SWIFTFORMAT_VERSION"
     local swiftlint_bin="$TOOLS/swiftlint-$SWIFTLINT_VERSION"
+    if ! python3 -B -m unittest \
+        scripts.test_gauntlet_status.G4ClassificationTests \
+        scripts.test_check_swiftlint_report \
+        >"$ART/g4-wrapper-selftest.log" 2>&1; then
+        record G4 BLOCKED "G4 result-classifier self-tests failed (see .gauntlet/g4-wrapper-selftest.log)"
+        return
+    fi
     mkdir -p "$TOOLS"
     : >"$ART/g4-onboard.log"
 
@@ -383,24 +399,60 @@ g4() {
         return
     fi
 
-    {
-        echo "SwiftFormat $SWIFTFORMAT_VERSION sha256:$SWIFTFORMAT_SHA256"
-        echo "SwiftLint $SWIFTLINT_VERSION sha256:$SWIFTLINT_SHA256"
-        echo "--- swiftformat --lint ---"
-        "$swiftformat_bin" --lint --quiet Packages/HermesKit App Tests 2>&1
+    format_rc=""
+    if ! {
+        "$swiftformat_bin" --lint --quiet Packages/HermesKit App Tests
         format_rc=$?
-        echo "--- swiftlint --strict ---"
+    } >"$ART/g4-swiftformat.log" 2>&1; then
+        record G4 BLOCKED "could not capture SwiftFormat evidence"
+        return
+    fi
+    lint_rc=""
+    if ! {
         env \
             SWIFT_EXEC="$SWIFT_BIN" \
             LINUX_SOURCEKIT_LIB_PATH="$SOURCEKIT_LIB_DIR" \
-            "$swiftlint_bin" --strict --quiet 2>&1
+            "$swiftlint_bin" --strict --quiet --reporter json
         lint_rc=$?
-    } >"$ART/g4.log" 2>&1
-    if [ "$format_rc" -ne 0 ] || [ "$lint_rc" -ne 0 ]; then
-        record G4 FAIL "lint violations (see .gauntlet/g4.log)"
-    else
-        record G4 PASS "zero violations (SwiftFormat $SWIFTFORMAT_VERSION + SwiftLint $SWIFTLINT_VERSION)"
+    } >"$ART/g4-swiftlint.json" 2>"$ART/g4-swiftlint.stderr"; then
+        record G4 BLOCKED "could not capture SwiftLint evidence"
+        return
     fi
+    if [ ! -f "$ART/g4-swiftlint.stderr" ]; then
+        record G4 BLOCKED "SwiftLint stderr evidence was not created"
+        return
+    elif [ -s "$ART/g4-swiftlint.stderr" ]; then
+        stderr_state="nonempty"
+    else
+        stderr_state="empty"
+    fi
+    violation_count="$(python3 -B scripts/check_swiftlint_report.py \
+        "$ART/g4-swiftlint.json" 2>"$ART/g4-swiftlint-evidence.log")"
+    report_rc=$?
+
+    if ! {
+        echo "SwiftFormat $SWIFTFORMAT_VERSION sha256:$SWIFTFORMAT_SHA256" \
+            && echo "SwiftLint $SWIFTLINT_VERSION sha256:$SWIFTLINT_SHA256" \
+            && echo "--- swiftformat --lint ---" \
+            && cat "$ART/g4-swiftformat.log" \
+            && echo "--- swiftlint --strict --reporter json ---" \
+            && cat "$ART/g4-swiftlint.json" \
+            && { [ ! -s "$ART/g4-swiftlint.stderr" ] \
+                || { echo "--- swiftlint stderr ---" \
+                    && cat "$ART/g4-swiftlint.stderr"; }; } \
+            && { [ ! -s "$ART/g4-swiftlint-evidence.log" ] \
+                || { echo "--- SwiftLint evidence checker ---" \
+                    && cat "$ART/g4-swiftlint-evidence.log"; }; } \
+            && echo "--- exit evidence ---" \
+            && echo "SwiftFormat rc=$format_rc" \
+            && echo "SwiftLint rc=$lint_rc; report rc=$report_rc; findings=${violation_count:-unknown}; stderr=$stderr_state"
+    } >"$ART/g4.log" 2>&1; then
+        record G4 BLOCKED "could not assemble G4 evidence (see .gauntlet/g4.log)"
+        return
+    fi
+    talaria_classify_g4 \
+        "$format_rc" "$lint_rc" "$report_rc" "$violation_count" "$stderr_state"
+    record G4 "$TALARIA_CLASS_STATUS" "$TALARIA_CLASS_DETAIL"
 }
 
 # ---- G5: secrets + host hygiene ------------------------------------------------
@@ -408,6 +460,13 @@ g5() {
     section "G5 · secret scan + hardcoded-host grep"
     local prerequisite archive part actual version_rc history_rc worktree_rc literal_rc
     local gl_bin="$TOOLS/gitleaks-$GITLEAKS_VERSION"
+    if ! python3 -B -m unittest \
+        scripts.test_gauntlet_status.G5ClassificationTests \
+        scripts.test_gitleaks_canary \
+        >"$ART/g5-wrapper-selftest.log" 2>&1; then
+        record G5 BLOCKED "G5 result-classifier self-tests failed (see .gauntlet/g5-wrapper-selftest.log)"
+        return
+    fi
     mkdir -p "$TOOLS"
     : >"$ART/g5-onboard.log"
     for prerequisite in curl sha256sum tar; do
@@ -441,41 +500,49 @@ g5() {
         record G5 BLOCKED "expected gitleaks $GITLEAKS_VERSION, found ${actual:-unknown}"
         return
     fi
+    if ! bash scripts/check_gitleaks_canary.sh \
+        "$gl_bin" "$TALARIA_GITLEAKS_FINDINGS_RC" \
+        >"$ART/g5-canary.log" 2>&1; then
+        record G5 BLOCKED "pinned gitleaks failed its offline functional canary (see .gauntlet/g5-canary.log)"
+        return
+    fi
 
-    "$gl_bin" detect --source . --redact -v >"$ART/g5-history.log" 2>&1
-    history_rc=$?
-    "$gl_bin" detect --source . --no-git --redact -v >"$ART/g5-worktree.log" 2>&1
-    worktree_rc=$?
-    python3 -B -m unittest scripts.test_check_source_hygiene \
-        >"$ART/g5-selftest.log" 2>&1
-    if [ $? -ne 0 ]; then
+    if "$gl_bin" git --redact -v \
+        --exit-code "$TALARIA_GITLEAKS_FINDINGS_RC" . >"$ART/g5-history.log" 2>&1; then
+        history_rc=0
+    else
+        history_rc=$?
+    fi
+    if "$gl_bin" dir --redact -v \
+        --exit-code "$TALARIA_GITLEAKS_FINDINGS_RC" . >"$ART/g5-worktree.log" 2>&1; then
+        worktree_rc=0
+    else
+        worktree_rc=$?
+    fi
+    if ! python3 -B -m unittest scripts.test_check_source_hygiene \
+        >"$ART/g5-selftest.log" 2>&1; then
         record G5 BLOCKED "source-literal checker self-tests failed (see .gauntlet/g5-selftest.log)"
         return
     fi
-    python3 -B scripts/check_source_hygiene.py >"$ART/g5-literals.log" 2>&1
-    literal_rc=$?
-    if [ "$literal_rc" -gt 1 ]; then
-        record G5 BLOCKED "source-literal scan was indeterminate (see .gauntlet/g5-literals.log)"
+    if python3 -B scripts/check_source_hygiene.py >"$ART/g5-literals.log" 2>&1; then
+        literal_rc=0
+    else
+        literal_rc=$?
+    fi
+    if ! talaria_assemble_g5_evidence \
+        "$ART/g5.log" \
+        "$GITLEAKS_VERSION" \
+        "$GITLEAKS_SHA256" \
+        "$TALARIA_GITLEAKS_FINDINGS_RC" \
+        "$ART/g5-canary.log" \
+        "$ART/g5-history.log" \
+        "$ART/g5-worktree.log" \
+        "$ART/g5-literals.log"; then
+        record G5 BLOCKED "could not assemble G5 evidence (see .gauntlet/g5.log)"
         return
     fi
-    {
-        echo "gitleaks $GITLEAKS_VERSION sha256:$GITLEAKS_SHA256"
-        echo "--- gitleaks git history ---"
-        cat "$ART/g5-history.log"
-        echo "--- gitleaks working tree ---"
-        cat "$ART/g5-worktree.log"
-        echo "--- hardcoded hosts / credential-shaped literals ---"
-        cat "$ART/g5-literals.log"
-    } >"$ART/g5.log" 2>&1
-    if [ "$history_rc" -gt 1 ] || [ "$worktree_rc" -gt 1 ]; then
-        record G5 BLOCKED "gitleaks execution failed (history rc=$history_rc; worktree rc=$worktree_rc)"
-    elif [ "$history_rc" -eq 1 ] || [ "$worktree_rc" -eq 1 ]; then
-        record G5 FAIL "secret findings (redacted) in .gauntlet/g5.log"
-    elif [ "$literal_rc" -eq 1 ]; then
-        record G5 FAIL "hardcoded host/token-shaped literal (see .gauntlet/g5.log)"
-    else
-        record G5 PASS "no secrets in history or working tree; no hardcoded hosts"
-    fi
+    talaria_classify_g5 "$history_rc" "$worktree_rc" "$literal_rc"
+    record G5 "$TALARIA_CLASS_STATUS" "$TALARIA_CLASS_DETAIL"
 }
 
 # ---- G6: XcodeGen determinism ---------------------------------------------------
@@ -517,107 +584,117 @@ g6() {
 # ---- Tier B dispatch -------------------------------------------------------------
 tier_b() {
     section "Tier B · dispatching macos-26 workflow"
-    local branch dispatch_started run_record run_id run_sha list_rc watch_rc attempt
-    local head_sha remote_record remote_sha dirty_state final_record view_rc
-    local final_status final_conclusion final_sha
-    branch="$(git rev-parse --abbrev-ref HEAD)"
-    if [ -z "$branch" ] || [ "$branch" = "HEAD" ]; then
-        record "B*" BLOCKED "Tier B dispatch requires a named branch"
+    local branch branch_rc origin_url origin_url_rc correlation_token token_rc expected_title
+    local run_record run_id list_rc watch_rc attempt
+    local head_sha head_rc remote_record remote_rc dirty_state dirty_rc final_record view_rc
+    if ! python3 -B -m unittest scripts.test_gauntlet_status.TierBSourceBindingTests \
+        >"$ART/tierb-binding-selftest.log" 2>&1; then
+        record "B*" BLOCKED "Tier B source-binding self-tests failed (see .gauntlet/tierb-binding-selftest.log)"
+        return
+    fi
+    branch="$(git symbolic-ref --quiet --short HEAD 2>>"$ART/tierb-dispatch.log")"
+    branch_rc=$?
+    talaria_classify_tier_b_branch "$branch_rc" "$branch"
+    if [ "$TALARIA_CLASS_STATUS" != "PASS" ]; then
+        record "B*" BLOCKED "$TALARIA_CLASS_DETAIL"
+        return
+    fi
+    origin_url="$(git remote get-url origin 2>>"$ART/tierb-dispatch.log")"
+    origin_url_rc=$?
+    talaria_classify_tier_b_repository \
+        "$origin_url_rc" "$origin_url" "$TIER_B_REPOSITORY"
+    if [ "$TALARIA_CLASS_STATUS" != "PASS" ]; then
+        record "B*" BLOCKED "$TALARIA_CLASS_DETAIL"
         return
     fi
     dirty_state="$(git status --porcelain=v1 --untracked-files=all 2>>"$ART/tierb-dispatch.log")"
-    if [ $? -ne 0 ]; then
-        record "B*" BLOCKED "could not verify the Tier B source tree state"
+    dirty_rc=$?
+    talaria_classify_tier_b_clean_tree "$dirty_rc" "$dirty_state"
+    if [ "$TALARIA_CLASS_STATUS" != "PASS" ]; then
+        record "B*" BLOCKED "$TALARIA_CLASS_DETAIL"
         return
     fi
-    if [ -n "$dirty_state" ]; then
-        record "B*" BLOCKED "Tier B requires a clean committed source tree"
-        return
-    fi
-    head_sha="$(git rev-parse HEAD 2>>"$ART/tierb-dispatch.log")"
-    if [ -z "$head_sha" ]; then
-        record "B*" BLOCKED "could not resolve the local checkpoint commit"
+    head_sha="$(git rev-parse --verify 'HEAD^{commit}' 2>>"$ART/tierb-dispatch.log")"
+    head_rc=$?
+    talaria_classify_tier_b_local_sha "$head_rc" "$head_sha"
+    if [ "$TALARIA_CLASS_STATUS" != "PASS" ]; then
+        record "B*" BLOCKED "$TALARIA_CLASS_DETAIL"
         return
     fi
     remote_record="$(git ls-remote --exit-code origin "refs/heads/$branch" \
         2>>"$ART/tierb-dispatch.log")"
-    if [ $? -ne 0 ] || [ -z "$remote_record" ]; then
-        record "B*" BLOCKED "the checkpoint branch is not published on origin"
+    remote_rc=$?
+    talaria_classify_tier_b_remote "$remote_rc" "$remote_record" "$branch" "$head_sha"
+    if [ "$TALARIA_CLASS_STATUS" != "PASS" ]; then
+        record "B*" BLOCKED "$TALARIA_CLASS_DETAIL"
         return
     fi
-    read -r remote_sha _ <<<"$remote_record"
-    if [ "$remote_sha" != "$head_sha" ]; then
-        record "B*" BLOCKED "origin does not point to the local checkpoint commit"
+    correlation_token="$(python3 -c \
+        'import secrets; print("talaria-" + secrets.token_hex(16))' \
+        2>>"$ART/tierb-dispatch.log")"
+    token_rc=$?
+    talaria_classify_tier_b_correlation "$token_rc" "$correlation_token"
+    if [ "$TALARIA_CLASS_STATUS" != "PASS" ]; then
+        record "B*" BLOCKED "$TALARIA_CLASS_DETAIL"
         return
     fi
-    dispatch_started="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    gh workflow run tier-b.yml --ref "$branch" \
+    expected_title="$TALARIA_CLASS_VALUE2"
+    gh workflow run tier-b.yml --repo "$TIER_B_REPOSITORY" --ref "$branch" \
+        --field "correlation_token=$correlation_token" \
         >"$ART/tierb-dispatch.log" 2>&1 \
         || { record "B*" BLOCKED "workflow dispatch failed (see .gauntlet/tierb-dispatch.log)"; return; }
     run_id=""
-    run_sha=""
     for attempt in $(seq 1 20); do
         run_record="$(gh run list \
+            --repo "$TIER_B_REPOSITORY" \
             --workflow tier-b.yml \
             --branch "$branch" \
             --event workflow_dispatch \
-            --created ">=$dispatch_started" \
-            --limit 1 \
-            --json databaseId,headSha \
-            --jq '.[0] | select(. != null) | "\(.databaseId) \(.headSha)"' \
+            --limit 100 \
+            --json databaseId,headSha,displayTitle \
+            --jq '.[] | "\(.databaseId)|\(.headSha)|\(.displayTitle)"' \
             2>>"$ART/tierb-dispatch.log")"
         list_rc=$?
-        if [ "$list_rc" -ne 0 ]; then
-            record "B*" BLOCKED "could not identify the dispatched Tier B run"
-            return
-        fi
-        if [ -n "$run_record" ]; then
-            read -r run_id run_sha <<<"$run_record"
-            break
-        fi
-        sleep 2
+        talaria_classify_tier_b_run_selection \
+            "$list_rc" "$run_record" "$head_sha" "$expected_title"
+        case "$TALARIA_CLASS_STATUS" in
+            PASS)
+                run_id="$TALARIA_CLASS_VALUE"
+                break
+                ;;
+            WAIT) sleep 2 ;;
+            *)
+                record "B*" BLOCKED "$TALARIA_CLASS_DETAIL"
+                return
+                ;;
+        esac
     done
-    case "$run_id" in
-        ''|*[!0-9]*)
-            record "B*" BLOCKED "dispatch succeeded but no matching Tier B run appeared"
-            return
-            ;;
-    esac
-    if [ "$run_sha" != "$head_sha" ]; then
-        record "B*" BLOCKED "the selected Tier B run targets a different commit"
+    if [ -z "$run_id" ]; then
+        record "B*" BLOCKED "dispatch succeeded but no matching Tier B run appeared"
         return
     fi
     echo "following run $run_id ..."
-    gh run watch "$run_id" --exit-status >"$ART/tierb-watch.log" 2>&1
+    gh run watch "$run_id" --repo "$TIER_B_REPOSITORY" \
+        --exit-status >"$ART/tierb-watch.log" 2>&1
     watch_rc=$?
     final_record="$(gh run view "$run_id" \
-        --json status,conclusion,headSha \
-        --jq '"\(.status)|\(.conclusion // "")|\(.headSha)"' \
+        --repo "$TIER_B_REPOSITORY" \
+        --json status,conclusion,headSha,displayTitle \
+        --jq '"\(.status)|\(.conclusion // "")|\(.headSha)|\(.displayTitle)"' \
         2>>"$ART/tierb-watch.log")"
     view_rc=$?
-    if [ "$view_rc" -ne 0 ] || [ -z "$final_record" ]; then
-        record "B*" BLOCKED "could not verify the final Tier B run state"
-        return
-    fi
-    IFS='|' read -r final_status final_conclusion final_sha <<<"$final_record"
-    if [ "$final_sha" != "$head_sha" ]; then
-        record "B*" BLOCKED "the completed Tier B run reports a different commit"
-        return
-    fi
-    if [ "$final_status" != "completed" ]; then
-        record "B*" BLOCKED "Tier B observation ended before the run completed (watch rc=$watch_rc)"
-        return
-    fi
-    case "$final_conclusion" in
-        success)
+    talaria_classify_tier_b_final \
+        "$view_rc" "$final_record" "$head_sha" "$expected_title" "$watch_rc"
+    case "$TALARIA_CLASS_STATUS" in
+        PASS)
             resolve_tier_b_g6 "$run_id"
             record "TierB" PASS "run https://github.com/markschonfeld/Talaria/actions/runs/$run_id"
             ;;
-        failure)
+        FAIL)
             record "TierB" FAIL "run failed: https://github.com/markschonfeld/Talaria/actions/runs/$run_id (gh run view --log-failed)"
             ;;
         *)
-            record "B*" BLOCKED "Tier B completed without a decisive success/failure conclusion (${final_conclusion:-unknown})"
+            record "B*" BLOCKED "$TALARIA_CLASS_DETAIL"
             ;;
     esac
 }
