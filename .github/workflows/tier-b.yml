@@ -97,7 +97,7 @@ jobs:
           set -euo pipefail
           xcodebuild build \
             -scheme Talaria-iOS \
-            -destination "platform=iOS Simulator,id=$LARGE_UDID" \
+            -destination "platform=iOS Simulator,id=$LARGE_UDID,arch=arm64" \
             SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
             GCC_TREAT_WARNINGS_AS_ERRORS=YES \
             2>&1 | tee .gauntlet/g7.log
@@ -110,7 +110,7 @@ jobs:
           set -euo pipefail
           xcodebuild test \
             -scheme Talaria-iOS \
-            -destination "platform=iOS Simulator,id=$LARGE_UDID" \
+            -destination "platform=iOS Simulator,id=$LARGE_UDID,arch=arm64" \
             SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
             GCC_TREAT_WARNINGS_AS_ERRORS=YES \
             -resultBundlePath .gauntlet/unit.xcresult \
@@ -129,7 +129,7 @@ jobs:
           set -euo pipefail
           xcodebuild test \
             -scheme Talaria-UI \
-            -destination "platform=iOS Simulator,id=$SMALL_UDID" \
+            -destination "platform=iOS Simulator,id=$SMALL_UDID,arch=arm64" \
             SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
             GCC_TREAT_WARNINGS_AS_ERRORS=YES \
             -resultBundlePath .gauntlet/ui.xcresult \
@@ -243,7 +243,7 @@ jobs:
           set -euo pipefail
           xcodebuild build \
             -scheme Talaria-Watch \
-            -destination "platform=watchOS Simulator,id=$WATCH_UDID" \
+            -destination "platform=watchOS Simulator,id=$WATCH_UDID,arch=arm64" \
             SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
             GCC_TREAT_WARNINGS_AS_ERRORS=YES \
             2>&1 | tee .gauntlet/g9-build.log
@@ -256,7 +256,7 @@ jobs:
           set -euo pipefail
           xcodebuild test \
             -scheme Talaria-WatchUI \
-            -destination "platform=watchOS Simulator,id=$WATCH_UDID" \
+            -destination "platform=watchOS Simulator,id=$WATCH_UDID,arch=arm64" \
             SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
             GCC_TREAT_WARNINGS_AS_ERRORS=YES \
             -resultBundlePath .gauntlet/watchui.xcresult \
