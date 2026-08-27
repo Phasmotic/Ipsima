@@ -41,7 +41,8 @@ jobs:
           python3 -B -m unittest \
             scripts.test_check_xcode_log \
             scripts.test_check_xcresult_tests \
-            scripts.test_ensure_simulator_booted
+            scripts.test_ensure_simulator_booted \
+            scripts.test_g12_contract
 
       - name: Install pinned XcodeGen
         run: bash scripts/install_xcodegen.sh
@@ -157,11 +158,26 @@ jobs:
             --expect 'TalariaUITests/SmokeUITests/testLaunchShowsShell()' \
             --expect 'TalariaUITests/AccessibilityAuditUITests/testRootScreenPassesAccessibilityAudit()' \
             --expect 'TalariaUITests/LaunchPerformanceUITests/testLaunchMetricBaselineRecorded()' \
-            --expect 'TalariaUITests/LaunchPerformanceUITests/testColdLaunchWithinBudget()' \
             --expect-count 'TalariaUITests/SmokeUITests=1' \
             --expect-count 'TalariaUITests/AccessibilityAuditUITests=1' \
-            --expect-count 'TalariaUITests/LaunchPerformanceUITests=2' \
+            --expect-count 'TalariaUITests/LaunchPerformanceUITests=1' \
             | tee .gauntlet/g8-ui-evidence.log
+
+      - name: Capture G12 structured metrics contract (diagnostic; fail closed)
+        run: |
+          set -euo pipefail
+          xcrun xcresulttool help get test-results metrics 2>&1 \
+            | tee .gauntlet/g12-metrics-help.txt
+          test -s .gauntlet/g12-metrics-help.txt
+          xcrun xcresulttool get test-results metrics \
+            --path .gauntlet/ui.xcresult \
+            --compact \
+            2>.gauntlet/g12-metrics.stderr \
+            | tee .gauntlet/g12-metrics.json
+          test -s .gauntlet/g12-metrics.json
+          test ! -s .gauntlet/g12-metrics.stderr
+          echo "G12 BLOCKED — Xcode 26.6 metrics schema is not pinned yet." >&2
+          exit 2
 
       - name: G11 — N/A (no UI surface yet)
         run: |

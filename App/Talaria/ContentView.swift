@@ -12,7 +12,7 @@ struct ContentView: View {
                 .font(.largeTitle.bold())
             Text("Hermes Agent client — scaffold")
                 .font(.footnote)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.primary)
         }
         .padding()
     }

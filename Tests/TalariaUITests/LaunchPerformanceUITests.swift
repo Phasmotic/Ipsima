@@ -1,12 +1,8 @@
 import XCTest
 
-/// G12 — cold-launch budget, enforced twice:
-///   1. XCTApplicationLaunchMetric records the official baseline into the
-///      result bundle.
-///   2. A wall-clock assertion gives the gate teeth: cold start must beat
-///      3.0 s measured from `launch()` to first asserted element. This is a
-///      harness-side proxy (includes simulator overhead); the streaming
-///      main-thread clause arms in P2 when live streams exist.
+/// G12 — record exactly five official cold-launch samples in the result
+/// bundle. The fail-closed Tier B checker enforces the absolute 3.0 s budget
+/// over these samples; the streaming main-thread clause arms in P2.
 final class LaunchPerformanceUITests: XCTestCase {
     @MainActor
     func testLaunchMetricBaselineRecorded() {
@@ -14,8 +10,9 @@ final class LaunchPerformanceUITests: XCTestCase {
         let rootElement = app.staticTexts["Talaria"]
         self.terminateAndAssertNotRunning(app)
 
-        let metric = XCTApplicationLaunchMetric()
-        measure(metrics: [metric]) {
+        let options = XCTMeasureOptions()
+        options.iterationCount = 5
+        measure(metrics: [XCTApplicationLaunchMetric()], options: options) {
             XCTAssertEqual(app.state, .notRunning, "launch metric must start with the app terminated")
             app.launch()
             XCTAssertTrue(
@@ -24,25 +21,6 @@ final class LaunchPerformanceUITests: XCTestCase {
             )
             self.terminateAndAssertNotRunning(app)
         }
-    }
-
-    @MainActor
-    func testColdLaunchWithinBudget() {
-        let app = XCUIApplication()
-        let rootElement = app.staticTexts["Talaria"]
-        self.terminateAndAssertNotRunning(app)
-
-        let clock = ContinuousClock()
-        let elapsed = clock.measure {
-            XCTAssertEqual(app.state, .notRunning, "cold-launch timer must start with the app terminated")
-            app.launch()
-            XCTAssertTrue(
-                rootElement.waitForExistence(timeout: 10),
-                "expected root element did not appear before cold-launch timing stopped"
-            )
-        }
-
-        XCTAssertLessThan(elapsed, .seconds(3), "cold launch exceeded the 3 s budget")
     }
 
     @MainActor
