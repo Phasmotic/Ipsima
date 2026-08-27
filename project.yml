@@ -13,9 +13,6 @@ settings:
     ENABLE_USER_SCRIPT_SANDBOXING: YES
     CODE_SIGN_STYLE: Automatic
     GENERATE_INFOPLIST_FILE: YES
-    # P0/P1 contain no App Intents. Remove this in P4 when that feature lands.
-    ENABLE_APP_INTENTS_METADATA_EXTRACTION: NO
-    EXTRACT_APP_INTENTS_METADATA: NO
     # Tier B builds are simulator/archive-only until P6 (hard-gated).
     CODE_SIGNING_ALLOWED: NO
 
@@ -31,6 +28,8 @@ targets:
       - App/Talaria
     dependencies:
       - package: HermesKit
+      # Xcode 26 always runs metadata extraction for Swift app bundles; P4 uses App Intents.
+      - sdk: AppIntents.framework
       - target: TalariaWidgets   # extension embedded in the app bundle
     settings:
       base:
@@ -61,6 +60,8 @@ targets:
       - App/TalariaWatch
     dependencies:
       - package: HermesKit
+      # Xcode 26 always runs metadata extraction for Swift app bundles; P4 uses App Intents.
+      - sdk: AppIntents.framework
       - target: TalariaWatchWidgets   # extension embedded in the watch app
     settings:
       base:
