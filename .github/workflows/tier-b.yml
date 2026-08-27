@@ -39,6 +39,8 @@ jobs:
       - name: Verify Tier B evidence checker failure modes
         run: |
           python3 -B -m unittest \
+            scripts.test_check_launch_metrics \
+            scripts.test_check_tier_b_status_log \
             scripts.test_check_xcode_log \
             scripts.test_check_xcresult_tests \
             scripts.test_ensure_simulator_booted \
@@ -163,35 +165,109 @@ jobs:
             --expect-count 'TalariaUITests/LaunchPerformanceUITests=1' \
             | tee .gauntlet/g8-ui-evidence.log
 
-      - name: Capture G12 structured metrics contract (diagnostic; fail closed)
+      - name: Verify G12 cold-launch budget
         run: |
           set -euo pipefail
-          xcrun xcresulttool help get test-results metrics 2>&1 \
-            | tee .gauntlet/g12-metrics-help.txt
-          test -s .gauntlet/g12-metrics-help.txt
-          xcrun xcresulttool get test-results metrics \
-            --path .gauntlet/ui.xcresult \
-            --compact \
-            2>.gauntlet/g12-metrics.stderr \
-            | tee .gauntlet/g12-metrics.json
-          test -s .gauntlet/g12-metrics.json
-          test ! -s .gauntlet/g12-metrics.stderr
-          echo "G12_SCHEMA_BEGIN"
-          xcrun xcresulttool get test-results metrics \
+          g12_blocked() {
+            echo "G12 COLD-LAUNCH BLOCKED — $1" >&2
+            exit 2
+          }
+          G12_TEST_ID='test://com.apple.xcode/Talaria/TalariaUITests/LaunchPerformanceUITests/testLaunchMetricBaselineRecorded'
+          if ! xcrun xcresulttool version \
+            >.gauntlet/g12-xcresulttool-version.txt \
+            2>.gauntlet/g12-xcresulttool-version.stderr; then
+            g12_blocked "xcresulttool could not report its version"
+          fi
+          test -s .gauntlet/g12-xcresulttool-version.txt \
+            || g12_blocked "xcresulttool version evidence is empty"
+          test ! -s .gauntlet/g12-xcresulttool-version.stderr \
+            || g12_blocked "xcresulttool version emitted stderr"
+          if ! xcrun xcresulttool get test-results metrics \
             --schema \
             --schema-version 0.1.0 \
             --path .gauntlet/ui.xcresult \
             --compact \
-            2>.gauntlet/g12-metrics-schema.stderr \
-            | tee .gauntlet/g12-metrics-schema.json
-          echo "G12_SCHEMA_END"
-          test -s .gauntlet/g12-metrics-schema.json
-          test ! -s .gauntlet/g12-metrics-schema.stderr
-          shasum -a 256 .gauntlet/g12-metrics-schema.json \
-            | tee .gauntlet/g12-metrics-schema.sha256
-          test -s .gauntlet/g12-metrics-schema.sha256
-          echo "G12 BLOCKED — Xcode 26.6 metrics schema digest is not pinned yet." >&2
-          exit 2
+            >.gauntlet/g12-metrics-schema.json \
+            2>.gauntlet/g12-metrics-schema.stderr; then
+            g12_blocked "metrics-schema export failed"
+          fi
+          test -s .gauntlet/g12-metrics-schema.json \
+            || g12_blocked "metrics-schema export is empty"
+          test ! -s .gauntlet/g12-metrics-schema.stderr \
+            || g12_blocked "metrics-schema export emitted stderr"
+          if ! shasum -a 256 .gauntlet/g12-metrics-schema.json \
+            >.gauntlet/g12-metrics-schema.sha256 \
+            2>.gauntlet/g12-metrics-schema-shasum.stderr; then
+            g12_blocked "metrics-schema digest could not be computed"
+          fi
+          test -s .gauntlet/g12-metrics-schema.sha256 \
+            || g12_blocked "metrics-schema digest evidence is empty"
+          test ! -s .gauntlet/g12-metrics-schema-shasum.stderr \
+            || g12_blocked "metrics-schema digest emitted stderr"
+          if ! G12_SCHEMA_DIGEST="$(awk '{print $1}' .gauntlet/g12-metrics-schema.sha256)"; then
+            g12_blocked "metrics-schema digest evidence could not be parsed"
+          fi
+          [ "$G12_SCHEMA_DIGEST" = '55401dc6d98f6f89f82e05c971c3a29b8511a698d962af5a04c684c6fe46d8bf' ] \
+            || g12_blocked "metrics-schema digest does not match the reviewed pin"
+          echo "G12 schema SHA-256: $G12_SCHEMA_DIGEST"
+          if ! xcrun xcresulttool get test-results metrics \
+            --schema-version 0.1.0 \
+            --path .gauntlet/ui.xcresult \
+            --test-id "$G12_TEST_ID" \
+            --compact \
+            >.gauntlet/g12-metrics.json \
+            2>.gauntlet/g12-metrics.stderr; then
+            g12_blocked "metrics export failed"
+          fi
+          test -s .gauntlet/g12-metrics.json \
+            || g12_blocked "metrics export is empty"
+          test ! -s .gauntlet/g12-metrics.stderr \
+            || g12_blocked "metrics export emitted stderr"
+          if python3 -B scripts/check_launch_metrics.py \
+            --schema-json .gauntlet/g12-metrics-schema.json \
+            --metrics-json .gauntlet/g12-metrics.json \
+            >.gauntlet/g12-evidence.log 2>&1; then
+            G12_CHECKER_RC=0
+          else
+            G12_CHECKER_RC=$?
+          fi
+          test -s .gauntlet/g12-evidence.log \
+            || g12_blocked "checker verdict evidence is empty"
+          if ! G12_CHECKER_MARKER="$(awk 'NF { marker=$0 } END { print marker }' .gauntlet/g12-evidence.log)"; then
+            g12_blocked "checker verdict marker could not be parsed"
+          fi
+          case "$G12_CHECKER_RC" in
+            0)
+              case "$G12_CHECKER_MARKER" in
+                'G12 COLD-LAUNCH PASS: '*)
+                  cat .gauntlet/g12-evidence.log \
+                    || g12_blocked "checker PASS evidence could not be emitted"
+                  ;;
+                *) g12_blocked "checker status and PASS marker disagree" ;;
+              esac
+              ;;
+            1)
+              case "$G12_CHECKER_MARKER" in
+                'G12 COLD-LAUNCH FAIL: '*)
+                  cat .gauntlet/g12-evidence.log >&2 \
+                    || g12_blocked "checker FAIL evidence could not be emitted"
+                  exit 1
+                  ;;
+                *) g12_blocked "checker status and FAIL marker disagree" ;;
+              esac
+              ;;
+            2)
+              case "$G12_CHECKER_MARKER" in
+                'G12 COLD-LAUNCH BLOCKED: '*)
+                  cat .gauntlet/g12-evidence.log >&2 \
+                    || g12_blocked "checker BLOCKED evidence could not be emitted"
+                  exit 2
+                  ;;
+                *) g12_blocked "checker status and BLOCKED marker disagree" ;;
+              esac
+              ;;
+            *) g12_blocked "checker returned an unsupported status" ;;
+          esac
 
       - name: G11 — N/A (no UI surface yet)
         run: |
@@ -218,6 +294,30 @@ jobs:
             | tee .gauntlet/g4-swiftformat.log
           swiftlint --strict --quiet 2>&1 \
             | tee .gauntlet/g4-swiftlint.log
+
+      # The brief arms all of G12 and does not grant the streaming clause the
+      # G11/G14 pre-P2 N/A state. Keep the overall gate visibly blocked until
+      # the orchestrator decides phase applicability or a harness exists.
+      - name: G12 streaming responsiveness — BLOCKED pending phase decision
+        if: ${{ always() }}
+        run: |
+          echo "G12 BLOCKED — streaming responsiveness is not certified" >&2
+          exit 2
+
+      - name: Emit Tier B job status
+        if: ${{ always() }}
+        env:
+          TALARIA_STATUS_CORRELATION: ${{ inputs.correlation_token }}
+          TALARIA_JOB_STATUS: ${{ job.status }}
+        run: |
+          set -euo pipefail
+          STATUS_PREFIX='TALARIA_'"TIER_B_JOB_STATUS"
+          case "$TALARIA_JOB_STATUS" in
+            success) STATUS_VALUE="PASS" ;;
+            failure|cancelled) STATUS_VALUE="BLOCKED" ;;
+            *) STATUS_VALUE="BLOCKED" ;;
+          esac
+          printf '%s|%s|ios|%s\n' "$STATUS_PREFIX" "$TALARIA_STATUS_CORRELATION" "$STATUS_VALUE"
 
   watchos:
     name: G9 · watch app + widgets + UI smoke
@@ -315,6 +415,21 @@ jobs:
             --expect-count 'TalariaWatchUITests/WatchSmokeUITests=1' \
             | tee .gauntlet/g9-ui-evidence.log
 
+      - name: Emit Tier B job status
+        if: ${{ always() }}
+        env:
+          TALARIA_STATUS_CORRELATION: ${{ inputs.correlation_token }}
+          TALARIA_JOB_STATUS: ${{ job.status }}
+        run: |
+          set -euo pipefail
+          STATUS_PREFIX='TALARIA_'"TIER_B_JOB_STATUS"
+          case "$TALARIA_JOB_STATUS" in
+            success) STATUS_VALUE="PASS" ;;
+            failure|cancelled) STATUS_VALUE="BLOCKED" ;;
+            *) STATUS_VALUE="BLOCKED" ;;
+          esac
+          printf '%s|%s|watchos|%s\n' "$STATUS_PREFIX" "$TALARIA_STATUS_CORRELATION" "$STATUS_VALUE"
+
   archive:
     name: G13 · unsigned archive links everything
     runs-on: macos-26
@@ -371,3 +486,18 @@ jobs:
             --watch-app-target TalariaWatch \
             --watch-widget-target TalariaWatchWidgets 2>&1 \
             | tee .gauntlet/g13-embeds.txt
+
+      - name: Emit Tier B job status
+        if: ${{ always() }}
+        env:
+          TALARIA_STATUS_CORRELATION: ${{ inputs.correlation_token }}
+          TALARIA_JOB_STATUS: ${{ job.status }}
+        run: |
+          set -euo pipefail
+          STATUS_PREFIX='TALARIA_'"TIER_B_JOB_STATUS"
+          case "$TALARIA_JOB_STATUS" in
+            success) STATUS_VALUE="PASS" ;;
+            failure|cancelled) STATUS_VALUE="BLOCKED" ;;
+            *) STATUS_VALUE="BLOCKED" ;;
+          esac
+          printf '%s|%s|archive|%s\n' "$STATUS_PREFIX" "$TALARIA_STATUS_CORRELATION" "$STATUS_VALUE"

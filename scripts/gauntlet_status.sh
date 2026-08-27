@@ -351,12 +351,25 @@ talaria_classify_tier_b_final() {
     else
         case "$final_conclusion" in
             success)
-                TALARIA_CLASS_STATUS="PASS"
-                TALARIA_CLASS_DETAIL="Tier B completed successfully"
+                if ((10#$watch_rc != 0)); then
+                    TALARIA_CLASS_DETAIL="Tier B success disagreed with gh run watch (rc=$watch_rc)"
+                else
+                    # READY certifies only the source-bound run envelope. The
+                    # per-job log checker decides the gate result separately.
+                    TALARIA_CLASS_STATUS="READY"
+                    TALARIA_CLASS_DETAIL="completed Tier B success envelope verified"
+                fi
                 ;;
             failure)
-                TALARIA_CLASS_STATUS="FAIL"
-                TALARIA_CLASS_DETAIL="Tier B completed with test or build failures"
+                if ((10#$watch_rc == 0)); then
+                    TALARIA_CLASS_DETAIL="Tier B failure disagreed with gh run watch (rc=$watch_rc)"
+                else
+                    # GitHub collapses every nonzero step status to `failure`.
+                    # That conclusion cannot distinguish a specification
+                    # failure (exit 1) from missing evidence (exit 2).
+                    TALARIA_CLASS_STATUS="READY"
+                    TALARIA_CLASS_DETAIL="completed Tier B failure envelope verified; job evidence required"
+                fi
                 ;;
             *)
                 TALARIA_CLASS_DETAIL="Tier B completed without a decisive success/failure conclusion (${final_conclusion:-unknown})"

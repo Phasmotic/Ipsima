@@ -50,6 +50,16 @@ blocked_preflight() {
     exit 1
 }
 
+RUN_TIER_B=0
+if [ "$#" -gt 1 ]; then
+    blocked_preflight "expected at most one gauntlet argument"
+fi
+case "${1:-}" in
+    "") ;;
+    --tier-b) RUN_TIER_B=1 ;;
+    *) blocked_preflight "unknown gauntlet argument: $1" ;;
+esac
+
 STATUS_HELPERS="$ROOT/scripts/gauntlet_status.sh"
 [ -r "$STATUS_HELPERS" ] \
     || blocked_preflight "gate status classifiers are unavailable"
@@ -102,9 +112,12 @@ TOOLCHAIN_USR="$(cd "$SWIFT_RESOURCE_PATH/../.." 2>/dev/null && pwd -P)"
 [ -n "$TOOLCHAIN_USR" ] \
     || blocked_preflight "could not resolve the pinned Swift toolchain"
 LLVM_COV_BIN="$TOOLCHAIN_USR/bin/llvm-cov"
+LLVM_PROFDATA_BIN="$TOOLCHAIN_USR/bin/llvm-profdata"
 SOURCEKIT_LIB_DIR="$TOOLCHAIN_USR/lib"
 [ -x "$LLVM_COV_BIN" ] \
     || blocked_preflight "the pinned Swift toolchain does not provide llvm-cov"
+[ -x "$LLVM_PROFDATA_BIN" ] \
+    || blocked_preflight "the pinned Swift toolchain does not provide llvm-profdata"
 [ -f "$SOURCEKIT_LIB_DIR/libsourcekitdInProc.so" ] \
     || blocked_preflight "the pinned Swift toolchain does not provide SourceKit"
 
@@ -140,14 +153,21 @@ finish_g2() {
 }
 
 resolve_tier_b_g6() {
-    local index gate status detail
+    local index gate status detail g6_row_count=0 deferred_count=0 deferred_index=""
     for index in "${!RESULTS[@]}"; do
         IFS='|' read -r gate status detail <<<"${RESULTS[$index]}"
+        if [ "$gate" = "G6" ] || [ "$gate" = "G6*" ]; then
+            g6_row_count=$((g6_row_count + 1))
+        fi
         if [ "$gate" = "G6*" ] && [ "$status" = "DEFER->B" ]; then
-            RESULTS[$index]="G6|PASS|authoritative two-generation hash check passed in Tier B run $1"
-            return
+            deferred_count=$((deferred_count + 1))
+            deferred_index="$index"
         fi
     done
+    if [ "$g6_row_count" -ne 1 ] || [ "$deferred_count" -ne 1 ] || [ -z "$deferred_index" ]; then
+        return 1
+    fi
+    RESULTS[$deferred_index]="G6|PASS|authoritative two-generation hash check passed in Tier B run $1"
 }
 
 section() { printf '\n=== %s ===\n' "$1"; }
@@ -200,16 +220,59 @@ g2_cleanup_after_setup_failure() {
 # ---- G2: swift test + coverage ----------------------------------------------
 g2() {
     section "G2 · swift test + line coverage (>=85% on kit sources)"
-    local g2_temp g2_scratch test_rc warning_rc report_rc export_rc coverage_values
+    local g2_temp g2_scratch build_rc list_rc discovery_rc test_rc warning_rc
+    local evidence_rc evidence_marker merge_rc report_rc export_rc coverage_values
+    local binary_digest_before binary_digest_after hash_rc
+    local profile_raw profile_data
     local covered_lines total_lines raw_pct display_pct
+    local evidence_file
     local ignore_regex='(^|/)(Tests|\.build|\.gauntlet)(/|$)'
-    local -a profdata_files test_binaries
+    local -a test_binaries
+
+    for evidence_file in \
+        g2.log g2-build.log g2-list.txt g2-list.stderr \
+        g2-discovery.json g2-discovery.stderr g2-test.log \
+        g2-test-evidence.log g2-warning-check.log g2-coverage.txt g2-summary.json; do
+        if ! : >"$ART/$evidence_file"; then
+            record G2 BLOCKED "could not initialize fresh G2 evidence files"
+            return
+        fi
+    done
+
+    python3 -B -m unittest scripts.test_check_swift_test_execution \
+        >"$ART/g2-execution-selftest.log" 2>&1
+    if [ $? -ne 0 ]; then
+        record G2 BLOCKED "test-discovery checker self-tests failed (see .gauntlet/g2-execution-selftest.log)"
+        return
+    fi
 
     g2_temp="$(mktemp -d /tmp/talaria-hermeskit-swift-6.3.3.XXXXXX 2>/dev/null || true)"
     g2_scratch="$g2_temp/.build"
+    profile_raw="$g2_temp/g2.profraw"
+    profile_data="$g2_temp/g2.profdata"
     if [ -z "$g2_temp" ] || [ ! -d "$g2_temp" ] || ! mkdir -p "$g2_scratch"; then
         g2_cleanup_after_setup_failure "$g2_temp"
         record G2 BLOCKED "could not create a native WSL coverage scratch directory"
+        return
+    fi
+
+    swift build \
+        --package-path "$KIT" \
+        --scratch-path "$g2_scratch" \
+        -c debug \
+        -Xswiftc -warnings-as-errors \
+        --build-tests \
+        --enable-code-coverage \
+        >"$ART/g2-build.log" 2>&1
+    build_rc=$?
+    if [ "$build_rc" -ne 0 ]; then
+        cp "$ART/g2-build.log" "$ART/g2.log" 2>/dev/null || true
+        if [ -s "$ART/g2-build.log" ] && \
+            grep -Eq '(^error:|:[0-9]+:[0-9]+: error:)' "$ART/g2-build.log"; then
+            finish_g2 FAIL "coverage test build has compiler or manifest errors (see .gauntlet/g2.log)" "$g2_temp"
+        else
+            finish_g2 BLOCKED "coverage test build failed without a source diagnostic (see .gauntlet/g2.log)" "$g2_temp"
+        fi
         return
     fi
 
@@ -217,14 +280,96 @@ g2() {
         --package-path "$KIT" \
         --scratch-path "$g2_scratch" \
         -c debug \
-        -Xswiftc -warnings-as-errors \
-        --enable-code-coverage \
-        >"$ART/g2.log" 2>&1
-    test_rc=$?
-    if [ "$test_rc" -ne 0 ]; then
-        finish_g2 FAIL "test failure under SwiftPM coverage instrumentation (see .gauntlet/g2.log)" "$g2_temp"
+        --skip-build \
+        --enable-xctest \
+        --enable-swift-testing \
+        list \
+        >"$ART/g2-list.txt" 2>"$ART/g2-list.stderr"
+    list_rc=$?
+    if [ "$list_rc" -ne 0 ]; then
+        {
+            cat "$ART/g2-build.log"
+            cat "$ART/g2-list.stderr"
+        } >"$ART/g2.log"
+        finish_g2 BLOCKED "SwiftPM could not list the already-built test suite (see .gauntlet/g2.log)" "$g2_temp"
         return
     fi
+    if [ ! -s "$ART/g2-list.txt" ]; then
+        cp "$ART/g2-list.stderr" "$ART/g2.log" 2>/dev/null || true
+        finish_g2 BLOCKED "SwiftPM returned an empty test inventory (see .gauntlet/g2.log)" "$g2_temp"
+        return
+    fi
+
+    mapfile -t test_binaries < <(
+        find "$g2_scratch" -type f -name '*.xctest' -perm -u+x -print 2>/dev/null
+    )
+    if [ "${#test_binaries[@]}" -ne 1 ]; then
+        printf 'expected one test executable; found %s\n' \
+            "${#test_binaries[@]}" >>"$ART/g2-list.stderr"
+        cp "$ART/g2-list.stderr" "$ART/g2.log" 2>/dev/null || true
+        finish_g2 BLOCKED "ambiguous SwiftPM test executable (see .gauntlet/g2.log)" "$g2_temp"
+        return
+    fi
+
+    "${test_binaries[0]}" --dump-tests-json \
+        >"$ART/g2-discovery.json" 2>"$ART/g2-discovery.stderr"
+    discovery_rc=$?
+    if [ "$discovery_rc" -ne 0 ] || [ ! -s "$ART/g2-discovery.json" ]; then
+        finish_g2 BLOCKED "XCTest discovery evidence is unavailable" "$g2_temp"
+        return
+    fi
+    if [ -s "$ART/g2-discovery.stderr" ]; then
+        finish_g2 BLOCKED "XCTest discovery emitted unexpected stderr" "$g2_temp"
+        return
+    fi
+
+    binary_digest_before="$(python3 - "${test_binaries[0]}" <<'PY'
+import hashlib
+import pathlib
+import sys
+
+print(hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest())
+PY
+)"
+    hash_rc=$?
+    if [ "$hash_rc" -ne 0 ] || [[ ! "$binary_digest_before" =~ ^[0-9a-f]{64}$ ]]; then
+        finish_g2 BLOCKED "could not bind execution to the discovered test binary" "$g2_temp"
+        return
+    fi
+
+    LLVM_PROFILE_FILE="$profile_raw" swift test \
+        --package-path "$KIT" \
+        --scratch-path "$g2_scratch" \
+        -c debug \
+        --skip-build \
+        --enable-xctest \
+        --disable-swift-testing \
+        >"$ART/g2-test.log" 2>&1
+    test_rc=$?
+
+    binary_digest_after="$(python3 - "${test_binaries[0]}" <<'PY'
+import hashlib
+import pathlib
+import sys
+
+print(hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest())
+PY
+)"
+    hash_rc=$?
+    if [ "$hash_rc" -ne 0 ] || [ "$binary_digest_after" != "$binary_digest_before" ]; then
+        finish_g2 BLOCKED "test executable changed between discovery and execution" "$g2_temp"
+        return
+    fi
+
+    {
+        echo "--- swift build --build-tests ---"
+        cat "$ART/g2-build.log"
+        echo "--- swift test list --skip-build ---"
+        cat "$ART/g2-list.stderr"
+        echo "--- swift test exact XCTest execution ---"
+        cat "$ART/g2-test.log"
+    } >"$ART/g2.log"
+
     python3 -B scripts/check_xcode_log.py \
         --log "$ART/g2.log" >"$ART/g2-warning-check.log" 2>&1
     warning_rc=$?
@@ -236,26 +381,59 @@ g2() {
         return
     fi
 
-    mapfile -t profdata_files < <(
-        find "$g2_scratch" -type f -path '*/debug/codecov/*.profdata' -print 2>/dev/null
-    )
-    mapfile -t test_binaries < <(
-        find "$g2_scratch" -type f -name '*.xctest' -perm -u+x -print 2>/dev/null
-    )
-    if [ "${#profdata_files[@]}" -ne 1 ] || [ "${#test_binaries[@]}" -ne 1 ]; then
-        printf 'expected one coverage profile and one test executable; found %s and %s\n' \
-            "${#profdata_files[@]}" "${#test_binaries[@]}" >>"$ART/g2.log"
-        finish_g2 BLOCKED "ambiguous SwiftPM coverage artifacts (see .gauntlet/g2.log)" "$g2_temp"
+    python3 -B scripts/check_swift_test_execution.py \
+        --swiftpm-list "$ART/g2-list.txt" \
+        --discovery-json "$ART/g2-discovery.json" \
+        --execution-log "$ART/g2-test.log" \
+        --catalog-json protocol/methods.json \
+        --test-rc "$test_rc" \
+        >"$ART/g2-test-evidence.log" 2>&1
+    evidence_rc=$?
+    evidence_marker="$(awk 'NF { marker=$0 } END { print marker }' "$ART/g2-test-evidence.log")"
+    case "$evidence_rc" in
+        0)
+            case "$evidence_marker" in
+                "G2 TEST PASS: "*) ;;
+                *) finish_g2 BLOCKED "test checker status/marker evidence disagreed (see .gauntlet/g2-test-evidence.log)" "$g2_temp"; return ;;
+            esac
+            ;;
+        1)
+            case "$evidence_marker" in
+                "G2 TEST FAIL: "*) finish_g2 FAIL "test discovery or execution contract failed (see .gauntlet/g2-test-evidence.log)" "$g2_temp"; return ;;
+                *) finish_g2 BLOCKED "test checker status/marker evidence disagreed (see .gauntlet/g2-test-evidence.log)" "$g2_temp"; return ;;
+            esac
+            ;;
+        2)
+            case "$evidence_marker" in
+                "G2 TEST BLOCKED: "*) finish_g2 BLOCKED "test discovery or execution evidence was indeterminate (see .gauntlet/g2-test-evidence.log)" "$g2_temp"; return ;;
+                *) finish_g2 BLOCKED "test checker status/marker evidence disagreed (see .gauntlet/g2-test-evidence.log)" "$g2_temp"; return ;;
+            esac
+            ;;
+        *)
+            finish_g2 BLOCKED "test checker exited unexpectedly (rc=$evidence_rc; see .gauntlet/g2-test-evidence.log)" "$g2_temp"
+            return
+            ;;
+    esac
+
+    if [ ! -s "$profile_raw" ]; then
+        finish_g2 BLOCKED "the exact test executable produced no raw coverage profile" "$g2_temp"
+        return
+    fi
+    "$LLVM_PROFDATA_BIN" merge -sparse "$profile_raw" -o "$profile_data" \
+        >>"$ART/g2.log" 2>&1
+    merge_rc=$?
+    if [ "$merge_rc" -ne 0 ] || [ ! -s "$profile_data" ]; then
+        finish_g2 BLOCKED "llvm-profdata could not merge exact-binary coverage" "$g2_temp"
         return
     fi
 
     "$LLVM_COV_BIN" report "${test_binaries[0]}" \
-        -instr-profile="${profdata_files[0]}" \
+        -instr-profile="$profile_data" \
         -ignore-filename-regex="$ignore_regex" \
         >"$ART/g2-coverage.txt" 2>>"$ART/g2.log"
     report_rc=$?
     "$LLVM_COV_BIN" export "${test_binaries[0]}" \
-        -instr-profile="${profdata_files[0]}" \
+        -instr-profile="$profile_data" \
         -summary-only \
         -ignore-filename-regex="$ignore_regex" \
         >"$ART/g2-summary.json" 2>>"$ART/g2.log"
@@ -303,6 +481,7 @@ PY
 # ---- G3: protocol conformance ------------------------------------------------
 g3() {
     section "G3 · protocol conformance (methods.json <-> golden fixtures)"
+    local conformance_rc conformance_marker
     python3 -B -m unittest scripts.test_check_conformance \
         >"$ART/g3-selftest.log" 2>&1
     if [ $? -ne 0 ]; then
@@ -310,11 +489,14 @@ g3() {
         return
     fi
     python3 -B scripts/check_conformance.py >"$ART/g3.log" 2>&1
-    if [ $? -eq 0 ]; then
-        record G3 PASS "$(tail -1 "$ART/g3.log")"
-    else
-        record G3 FAIL "see .gauntlet/g3.log"
-    fi
+    conformance_rc=$?
+    conformance_marker="$(awk 'NF { marker=$0 } END { print marker }' "$ART/g3.log")"
+    case "$conformance_rc|$conformance_marker" in
+        "0|G3: PASS") record G3 PASS "$conformance_marker" ;;
+        "1|G3: FAIL") record G3 FAIL "see .gauntlet/g3.log" ;;
+        "2|G3: BLOCKED") record G3 BLOCKED "conformance evidence was indeterminate (see .gauntlet/g3.log)" ;;
+        *) record G3 BLOCKED "checker status/marker evidence disagreed (rc=$conformance_rc; see .gauntlet/g3.log)" ;;
+    esac
 }
 
 # ---- G4: lint -----------------------------------------------------------------
@@ -554,30 +736,13 @@ g6() {
         record G6 BLOCKED "determinism checker self-tests failed (see .gauntlet/g6-selftest.log)"
         return
     fi
-    if command -v xcodegen >/dev/null 2>&1; then
-        local actual rc
-        : >"$ART/g6.log"
-        if ! actual="$(xcodegen --version 2>>"$ART/g6.log")"; then
-            record G6 BLOCKED "XcodeGen could not report its version"
-            return
-        fi
-        case "$actual" in
-            "$XCODEGEN_VERSION"|"Version: $XCODEGEN_VERSION") ;;
-            *)
-                record G6 BLOCKED "expected XcodeGen $XCODEGEN_VERSION, found ${actual:-unknown}"
-                return
-                ;;
-        esac
-        python3 -B scripts/check_xcodegen_determinism.py \
-            --xcodegen "$(command -v xcodegen)" >"$ART/g6.log" 2>&1
-        rc=$?
-        case "$rc" in
-            0) record G6 PASS "two independent generations produced the same recursive hash" ;;
-            1) record G6 FAIL "generation failed or output differed (see .gauntlet/g6.log)" ;;
-            *) record G6 BLOCKED "determinism check was indeterminate rc=$rc (see .gauntlet/g6.log)" ;;
-        esac
+    # XcodeGen publishes a macOS executable, not a pinned Linux artifact. Do
+    # not trust an arbitrary PATH executable on WSL based on self-reported
+    # version text. Tier B installs the digest-verified official 2.46.0 asset.
+    if [ "$RUN_TIER_B" -eq 1 ]; then
+        record "G6*" "DEFER->B" "Tier B installs and verifies the official XcodeGen $XCODEGEN_VERSION asset"
     else
-        record "G6*" "DEFER->B" "XcodeGen is unavailable on Linux; Tier B installs and verifies 2.46.0"
+        record G6 BLOCKED "no verified Linux XcodeGen artifact; rerun through PowerShell with -TierB for authoritative G6"
     fi
 }
 
@@ -587,7 +752,11 @@ tier_b() {
     local branch branch_rc origin_url origin_url_rc correlation_token token_rc expected_title
     local run_record run_id list_rc watch_rc attempt
     local head_sha head_rc remote_record remote_rc dirty_state dirty_rc final_record view_rc
-    if ! python3 -B -m unittest scripts.test_gauntlet_status.TierBSourceBindingTests \
+    local final_conclusion logs_rc evidence_rc evidence_marker
+    local -a evidence_lines=()
+    if ! python3 -B -m unittest \
+        scripts.test_gauntlet_status.TierBSourceBindingTests \
+        scripts.test_check_tier_b_status_log \
         >"$ART/tierb-binding-selftest.log" 2>&1; then
         record "B*" BLOCKED "Tier B source-binding self-tests failed (see .gauntlet/tierb-binding-selftest.log)"
         return
@@ -685,16 +854,57 @@ tier_b() {
     view_rc=$?
     talaria_classify_tier_b_final \
         "$view_rc" "$final_record" "$head_sha" "$expected_title" "$watch_rc"
-    case "$TALARIA_CLASS_STATUS" in
-        PASS)
-            resolve_tier_b_g6 "$run_id"
-            record "TierB" PASS "run https://github.com/markschonfeld/Talaria/actions/runs/$run_id"
+    if [ "$TALARIA_CLASS_STATUS" != "READY" ]; then
+        record "B*" BLOCKED "$TALARIA_CLASS_DETAIL"
+        return
+    fi
+    final_conclusion="$TALARIA_CLASS_VALUE2"
+
+    # GitHub's run conclusion collapses exit 1 (FAIL) and exit 2 (BLOCKED)
+    # into the same `failure` value. Fetch the exact source-matched run's logs
+    # and require one correlation-bound status record from every Tier B job.
+    : >"$ART/tierb-full.log"
+    : >"$ART/tierb-full.stderr"
+    gh run view "$run_id" --repo "$TIER_B_REPOSITORY" --log \
+        >"$ART/tierb-full.log" 2>"$ART/tierb-full.stderr"
+    logs_rc=$?
+    if [ "$logs_rc" -ne 0 ] \
+        || [ ! -s "$ART/tierb-full.log" ] \
+        || [ -s "$ART/tierb-full.stderr" ]; then
+        record "B*" BLOCKED "could not retrieve complete source-bound Tier B job evidence"
+        return
+    fi
+    python3 -B scripts/check_tier_b_status_log.py \
+        --log "$ART/tierb-full.log" \
+        --correlation "$correlation_token" \
+        --conclusion "$final_conclusion" \
+        >"$ART/tierb-evidence.log" 2>&1
+    evidence_rc=$?
+    if ! mapfile -t evidence_lines <"$ART/tierb-evidence.log"; then
+        record "B*" BLOCKED "could not read the Tier B evidence verdict"
+        return
+    fi
+    if [ "${#evidence_lines[@]}" -ne 1 ]; then
+        record "B*" BLOCKED "Tier B evidence checker emitted an invalid verdict shape"
+        return
+    fi
+    evidence_marker="${evidence_lines[0]}"
+    case "$evidence_rc:$evidence_marker" in
+        "0:TIER B EVIDENCE PASS: "*)
+            if resolve_tier_b_g6 "$run_id"; then
+                record "TierB" PASS "run https://github.com/markschonfeld/Talaria/actions/runs/$run_id"
+            else
+                record "B*" BLOCKED "successful Tier B run could not resolve exactly one deferred G6 row"
+            fi
             ;;
-        FAIL)
+        "1:TIER B EVIDENCE FAIL: "*)
             record "TierB" FAIL "run failed: https://github.com/markschonfeld/Talaria/actions/runs/$run_id (gh run view --log-failed)"
             ;;
+        "2:TIER B EVIDENCE BLOCKED: "*)
+            record "TierB" BLOCKED "run evidence is incomplete or indeterminate: https://github.com/markschonfeld/Talaria/actions/runs/$run_id"
+            ;;
         *)
-            record "B*" BLOCKED "$TALARIA_CLASS_DETAIL"
+            record "B*" BLOCKED "Tier B evidence checker status and marker disagreed"
             ;;
     esac
 }
@@ -702,7 +912,7 @@ tier_b() {
 # ---- main -------------------------------------------------------------------------
 g1; g2; g3; g4; g5; g6
 
-if [ "${1:-}" = "--tier-b" ]; then
+if [ "$RUN_TIER_B" -eq 1 ]; then
     if [ "$FAILED" -eq 1 ]; then
         echo "Tier A is honestly red; Tier B is diagnostic and cannot make the gauntlet green."
     fi
@@ -719,7 +929,7 @@ done
 echo
 printf '%.0s-' {1..100}; echo
 if [ "$FAILED" -eq 0 ]; then
-    if [ "${1:-}" = "--tier-b" ]; then
+    if [ "$RUN_TIER_B" -eq 1 ]; then
         echo "GAUNTLET GREEN"
     else
         echo "TIER A GREEN"

@@ -46,6 +46,48 @@ printf '%s\n%s\n%s\n%s\n' \
         return lines[0], lines[1], lines[2], lines[3]
 
 
+class G2EvidenceBindingTests(unittest.TestCase):
+    def g2_source(self) -> str:
+        script = GAUNTLET.read_text(encoding="utf-8")
+        return script.split("\ng2() {", maxsplit=1)[1].split(
+            "# ---- G3", maxsplit=1
+        )[0]
+
+    def test_swiftpm_and_xctest_inventories_are_both_captured(self) -> None:
+        g2 = self.g2_source()
+        self.assertIn("--enable-xctest", g2)
+        self.assertIn("--enable-swift-testing", g2)
+        self.assertIn("--build-tests", g2)
+        self.assertIn("--enable-code-coverage", g2)
+        self.assertIn("list \\", g2)
+        self.assertIn("--dump-tests-json", g2)
+        self.assertIn("--disable-swift-testing", g2)
+
+    def test_execution_is_bound_to_the_discovered_binary(self) -> None:
+        g2 = self.g2_source()
+        self.assertIn('LLVM_PROFILE_FILE="$profile_raw" swift test', g2)
+        self.assertIn('"$LLVM_PROFDATA_BIN" merge -sparse', g2)
+        self.assertEqual(g2.count("\n        --skip-build \\"), 2)
+        self.assertIn("binary_digest_before", g2)
+        self.assertIn("binary_digest_after", g2)
+        self.assertIn('"$binary_digest_after" != "$binary_digest_before"', g2)
+
+    def test_checker_receives_every_source_of_execution_evidence(self) -> None:
+        g2 = self.g2_source()
+        self.assertIn("scripts.test_check_swift_test_execution", g2)
+        self.assertIn("scripts/check_swift_test_execution.py", g2)
+        for argument in (
+            "--swiftpm-list",
+            "--discovery-json",
+            "--execution-log",
+            "--catalog-json",
+            "--test-rc",
+        ):
+            self.assertIn(argument, g2)
+        for marker in ("G2 TEST PASS: ", "G2 TEST FAIL: ", "G2 TEST BLOCKED: "):
+            self.assertIn(marker, g2)
+
+
 class G4ClassificationTests(ShellClassifierTests):
     def test_gauntlet_uses_machine_readable_swiftlint_evidence(self) -> None:
         script = GAUNTLET.read_text(encoding="utf-8")
@@ -257,6 +299,98 @@ talaria_assemble_g5_evidence \
 
 
 class TierBSourceBindingTests(ShellClassifierTests):
+    def resolve_g6(self, *rows: str) -> subprocess.CompletedProcess[str]:
+        source = GAUNTLET.read_text(encoding="utf-8")
+        resolver = "resolve_tier_b_g6() {" + source.split(
+            "resolve_tier_b_g6() {", maxsplit=1
+        )[1].split("section()", maxsplit=1)[0]
+        script = resolver + r'''
+run_id="$1"
+shift
+RESULTS=("$@")
+if resolve_tier_b_g6 "$run_id"; then
+    result=0
+else
+    result=$?
+fi
+printf '%s\n' "${RESULTS[@]}"
+exit "$result"
+'''
+        return subprocess.run(
+            ["bash", "-c", script, "talaria-g6-resolver-test", "12345", *rows],
+            cwd=REPO,
+            capture_output=True,
+            text=True,
+        )
+
+    def test_gauntlet_rejects_extra_or_unknown_arguments(self) -> None:
+        script = GAUNTLET.read_text(encoding="utf-8")
+        preflight = script.split("STATUS_HELPERS=", maxsplit=1)[0]
+        self.assertIn('if [ "$#" -gt 1 ]', preflight)
+        self.assertIn('*) blocked_preflight "unknown gauntlet argument: $1"', preflight)
+
+    def test_local_g6_defer_cannot_print_tier_a_green(self) -> None:
+        script = GAUNTLET.read_text(encoding="utf-8")
+        g6 = script.split("\ng6() {", maxsplit=1)[1].split(
+            "# ---- Tier B", maxsplit=1
+        )[0]
+
+        self.assertIn('if [ "$RUN_TIER_B" -eq 1 ]', g6)
+        self.assertIn('record "G6*" "DEFER->B"', g6)
+        self.assertIn('record G6 BLOCKED "no verified Linux XcodeGen artifact', g6)
+        self.assertNotIn("command -v xcodegen", g6)
+
+    def test_tier_b_success_resolves_exactly_one_deferred_g6(self) -> None:
+        script = GAUNTLET.read_text(encoding="utf-8")
+        resolver = script.split("resolve_tier_b_g6() {", maxsplit=1)[1].split(
+            "section()", maxsplit=1
+        )[0]
+        tier_b = script.split("tier_b() {", maxsplit=1)[1]
+
+        self.assertIn('[ "$deferred_count" -ne 1 ]', resolver)
+        self.assertIn("if resolve_tier_b_g6", tier_b)
+        self.assertIn("could not resolve exactly one deferred G6 row", tier_b)
+
+        deferred = self.resolve_g6("G6*|DEFER->B|awaiting Tier B")
+        self.assertEqual(deferred.returncode, 0, deferred.stdout + deferred.stderr)
+        self.assertIn("G6|PASS|authoritative two-generation", deferred.stdout)
+
+    def test_tier_b_g6_resolution_rejects_missing_or_ambiguous_local_state(self) -> None:
+        cases = (
+            (),
+            ("G6|BLOCKED|tool missing",),
+            ("G6|PASS|untrusted local executable",),
+            ("G6*|DEFER->B|one", "G6*|DEFER->B|two"),
+            ("G6*|DEFER->B|deferred", "G6*|PASS|wrong status"),
+        )
+        for rows in cases:
+            with self.subTest(rows=rows):
+                result = self.resolve_g6(*rows)
+                self.assertNotEqual(result.returncode, 0)
+
+    def test_every_tier_b_job_executes_g6_without_a_skip_condition(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        step_names = (
+            "Verify XcodeGen determinism and generate project (G6, authoritative)",
+            "Verify XcodeGen determinism and generate project (G6)",
+        )
+
+        self.assertEqual(workflow.count(step_names[0]), 1)
+        self.assertEqual(workflow.count(step_names[1]), 2)
+        self.assertEqual(
+            workflow.count("python3 -B scripts/check_xcodegen_determinism.py"), 3
+        )
+        for name in step_names:
+            start = 0
+            while True:
+                index = workflow.find(f"- name: {name}", start)
+                if index == -1:
+                    break
+                next_step = workflow.find("\n      - name:", index + 1)
+                section = workflow[index : next_step if next_step != -1 else None]
+                self.assertNotIn("\n        if:", section)
+                start = index + 1
+
     def test_gauntlet_requests_and_classifies_multiple_run_candidates(self) -> None:
         script = GAUNTLET.read_text(encoding="utf-8")
         tier_b = script.split("tier_b() {", maxsplit=1)[1]
@@ -277,11 +411,62 @@ class TierBSourceBindingTests(ShellClassifierTests):
         self.assertIn('--field "correlation_token=$correlation_token"', tier_b)
         self.assertIn("displayTitle", tier_b)
 
+    def test_every_tier_b_job_emits_one_fail_closed_status_record(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        self.assertEqual(workflow.count("- name: Emit Tier B job status"), 3)
+        self.assertEqual(
+            workflow.count("TALARIA_STATUS_CORRELATION: ${{ inputs.correlation_token }}"),
+            3,
+        )
+        self.assertEqual(workflow.count("TALARIA_JOB_STATUS: ${{ job.status }}"), 3)
+        self.assertEqual(
+            workflow.count("STATUS_PREFIX='TALARIA_'\"TIER_B_JOB_STATUS\""),
+            3,
+        )
+        self.assertNotIn("TALARIA_TIER_B_JOB_STATUS|", workflow)
+        for job in ("ios", "watchos", "archive"):
+            self.assertEqual(
+                workflow.count(
+                    f"printf '%s|%s|{job}|%s\\n' \"$STATUS_PREFIX\" "
+                    '"$TALARIA_STATUS_CORRELATION" "$STATUS_VALUE"'
+                ),
+                1,
+            )
+
+        for section in workflow.split("- name: Emit Tier B job status")[1:]:
+            step = section.split("\n      - name:", maxsplit=1)[0]
+            self.assertIn("if: ${{ always() }}", step)
+            self.assertIn('success) STATUS_VALUE="PASS"', step)
+            self.assertIn('failure|cancelled) STATUS_VALUE="BLOCKED"', step)
+            self.assertNotIn('STATUS_VALUE="FAIL"', step)
+
+    def test_status_checker_failure_modes_run_before_dispatch_and_in_tier_b(self) -> None:
+        script = GAUNTLET.read_text(encoding="utf-8")
+        tier_b = script.split("tier_b() {", maxsplit=1)[1]
+        self.assertIn("scripts.test_check_tier_b_status_log", tier_b)
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("scripts.test_check_tier_b_status_log", workflow)
+
     def test_every_gh_operation_is_bound_to_the_verified_repository(self) -> None:
         script = GAUNTLET.read_text(encoding="utf-8")
         tier_b = script.split("tier_b() {", maxsplit=1)[1]
-        self.assertEqual(tier_b.count('--repo "$TIER_B_REPOSITORY"'), 4)
+        self.assertEqual(tier_b.count('--repo "$TIER_B_REPOSITORY"'), 5)
         self.assertIn("talaria_classify_tier_b_repository", tier_b)
+
+    def test_exact_run_logs_are_checked_with_the_dispatch_correlation(self) -> None:
+        script = GAUNTLET.read_text(encoding="utf-8")
+        tier_b = script.split("tier_b() {", maxsplit=1)[1]
+        self.assertIn('gh run view "$run_id" --repo "$TIER_B_REPOSITORY" --log', tier_b)
+        self.assertIn("scripts/check_tier_b_status_log.py", tier_b)
+        self.assertIn('--correlation "$correlation_token"', tier_b)
+        self.assertIn('--conclusion "$final_conclusion"', tier_b)
+        self.assertIn('mapfile -t evidence_lines <"$ART/tierb-evidence.log"', tier_b)
+        for marker in (
+            "TIER B EVIDENCE PASS: ",
+            "TIER B EVIDENCE FAIL: ",
+            "TIER B EVIDENCE BLOCKED: ",
+        ):
+            self.assertIn(marker, tier_b)
 
     def test_named_branch_passes(self) -> None:
         status, _, value, _ = self.classify(
@@ -520,7 +705,7 @@ class TierBSourceBindingTests(ShellClassifierTests):
         self.assertEqual(status, "BLOCKED")
         self.assertIn("candidates", detail)
 
-    def test_completed_success_and_failure_are_decisive(self) -> None:
+    def test_completed_success_and_failure_envelopes_require_job_evidence(self) -> None:
         success = self.classify(
             "talaria_classify_tier_b_final",
             "0",
@@ -537,8 +722,27 @@ class TierBSourceBindingTests(ShellClassifierTests):
             TITLE,
             "1",
         )
-        self.assertEqual(success[0], "PASS")
-        self.assertEqual(failure[0], "FAIL")
+        self.assertEqual((success[0], success[3]), ("READY", "success"))
+        self.assertEqual((failure[0], failure[3]), ("READY", "failure"))
+        self.assertIn("job evidence required", failure[1])
+
+    def test_final_conclusion_must_agree_with_watch_exit_status(self) -> None:
+        cases = (
+            (f"completed|success|{SHA_A}|{TITLE}", "1"),
+            (f"completed|failure|{SHA_A}|{TITLE}", "0"),
+        )
+        for record, watch_rc in cases:
+            with self.subTest(record=record, watch_rc=watch_rc):
+                status, detail, _, _ = self.classify(
+                    "talaria_classify_tier_b_final",
+                    "0",
+                    record,
+                    SHA_A,
+                    TITLE,
+                    watch_rc,
+                )
+                self.assertEqual(status, "BLOCKED")
+                self.assertIn("disagreed", detail)
 
     def test_final_view_error_or_malformed_record_blocks(self) -> None:
         cases = (

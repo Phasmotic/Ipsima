@@ -41,6 +41,16 @@ versions supplied to Tier B; their Linux release assets are pinned and SHA-256 v
 execution. Tool version output and the non-sensitive launcher entry marker are retained in
 `.gauntlet/` logs; runtime namespace identifiers and local filesystem paths are not evidence.
 
+Swift 6.3.3 requires an explicit G2 coverage sequence. `swift test list` ignores its coverage
+flag, while asking `swift test --skip-build` to enable coverage exits unsuccessfully without a
+profile. Tier A therefore builds the tests once with `swift build --build-tests
+--enable-code-coverage`, inventories that exact binary through SwiftPM and XCTest, and then runs
+`swift test --skip-build` without the broken coverage flag while `LLVM_PROFILE_FILE` captures the
+already-instrumented binary. Its SHA-256 is required to remain unchanged across discovery and
+execution; the pinned `llvm-profdata` and `llvm-cov` from Swift 6.3.3 merge and report the profile.
+This preserves the required `swift test` execution and 85% source-line floor without relying on
+SwiftPM's faulty post-run coverage path.
+
 ## Toolchain parity and pins
 
 Tier A and Tier B must prove the following exact versions before using a tool. A cached binary is
@@ -58,3 +68,26 @@ checked against their published SHA-256 digest.
 The macOS runner inventory supplies SwiftFormat and SwiftLint at the required versions. Gitleaks
 and XcodeGen are not assumed from runner state; the gauntlet installs and verifies their pinned
 artifacts explicitly. Tier B remains authoritative for Apple-platform compilation and tests.
+
+XcodeGen does not publish a verified Linux executable for the pinned release. Local G6 therefore
+always reports `BLOCKED` instead of trusting an arbitrary executable found on `PATH` by its
+self-reported version. An authoritative G6 result comes only from the digest-verified official
+XcodeGen 2.46.0 macOS asset in a source-bound Tier B run. That run generates twice into isolated
+temporary directories and compares recursive output hashes; the generated project remains
+untracked.
+
+## Tier B result evidence
+
+GitHub Actions reports every nonzero step exit as the same workflow conclusion, `failure`; that
+summary cannot distinguish a deterministic gate failure from missing or indeterminate evidence.
+Each of the three Tier B jobs therefore emits exactly one final status record bound to the
+dispatch correlation token. The local gauntlet retrieves the complete logs for the exact
+source-matched run and requires one valid record for each expected job. Missing, duplicate,
+malformed, mismatched, or contradictory records are `BLOCKED`.
+
+The aggregate is deliberately conservative: `BLOCKED` dominates `FAIL`, which dominates `PASS`.
+At this repair checkpoint, a GitHub job whose earlier step failed emits `BLOCKED`, because the job
+conclusion alone does not prove whether the underlying process returned a findings status or an
+operational status. A successful run can pass only when all three correlation-bound records say
+`PASS` and the workflow conclusion agrees. Raw job logs and correlation tokens are local evidence;
+they are never copied into public audit text.
