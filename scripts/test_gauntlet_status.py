@@ -468,6 +468,31 @@ exit "$result"
         ):
             self.assertIn(marker, tier_b)
 
+    def test_eventually_consistent_job_logs_use_bounded_fresh_retries(self) -> None:
+        script = GAUNTLET.read_text(encoding="utf-8")
+        tier_b = script.split("tier_b() {", maxsplit=1)[1]
+        retry = tier_b.split("for evidence_attempt in $(seq 1 30); do", maxsplit=1)[1]
+        retry = retry.split("if [ \"$evidence_ready\" -ne 1 ]", maxsplit=1)[0]
+        self.assertIn('gh run view "$run_id" --repo "$TIER_B_REPOSITORY" --log', retry)
+        self.assertIn(': >"$ART/tierb-full.log"', retry)
+        self.assertIn(': >"$ART/tierb-full.stderr"', retry)
+        self.assertIn("evidence_lines=()", retry)
+        self.assertIn('sleep 5', retry)
+        self.assertIn('[ "$evidence_attempt" -lt 30 ]', retry)
+        self.assertIn(
+            "TIER B EVIDENCE BLOCKED: at least one job reported BLOCKED "
+            "and the workflow run failed",
+            retry,
+        )
+        checker = (REPO / "scripts" / "check_tier_b_status_log.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(
+            '"at least one job reported BLOCKED and the workflow run failed"',
+            checker,
+        )
+        self.assertIn("evidence_ready=1", retry)
+
     def test_named_branch_passes(self) -> None:
         status, _, value, _ = self.classify(
             "talaria_classify_tier_b_branch", "0", "codex/phase-0-handoff"

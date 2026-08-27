@@ -753,6 +753,7 @@ tier_b() {
     local run_record run_id list_rc watch_rc attempt
     local head_sha head_rc remote_record remote_rc dirty_state dirty_rc final_record view_rc
     local final_conclusion logs_rc evidence_rc evidence_marker
+    local evidence_attempt evidence_ready=0
     local -a evidence_lines=()
     if ! python3 -B -m unittest \
         scripts.test_gauntlet_status.TierBSourceBindingTests \
@@ -863,32 +864,48 @@ tier_b() {
     # GitHub's run conclusion collapses exit 1 (FAIL) and exit 2 (BLOCKED)
     # into the same `failure` value. Fetch the exact source-matched run's logs
     # and require one correlation-bound status record from every Tier B job.
-    : >"$ART/tierb-full.log"
-    : >"$ART/tierb-full.stderr"
-    gh run view "$run_id" --repo "$TIER_B_REPOSITORY" --log \
-        >"$ART/tierb-full.log" 2>"$ART/tierb-full.stderr"
-    logs_rc=$?
-    if [ "$logs_rc" -ne 0 ] \
-        || [ ! -s "$ART/tierb-full.log" ] \
-        || [ -s "$ART/tierb-full.stderr" ]; then
-        record "B*" BLOCKED "could not retrieve complete source-bound Tier B job evidence"
+    # Completed-job logs are eventually consistent: the run can be complete
+    # before every job log is available to `gh run view --log`. Refetch within
+    # a fixed window, always replacing (never accumulating) the evidence. A
+    # malformed or contradictory complete inventory remains BLOCKED when the
+    # window expires; only an exact complete verdict can end the loop early.
+    for evidence_attempt in $(seq 1 30); do
+        : >"$ART/tierb-full.log"
+        : >"$ART/tierb-full.stderr"
+        gh run view "$run_id" --repo "$TIER_B_REPOSITORY" --log \
+            >"$ART/tierb-full.log" 2>"$ART/tierb-full.stderr"
+        logs_rc=$?
+        if [ "$logs_rc" -eq 0 ] \
+            && [ -s "$ART/tierb-full.log" ] \
+            && [ ! -s "$ART/tierb-full.stderr" ]; then
+            python3 -B scripts/check_tier_b_status_log.py \
+                --log "$ART/tierb-full.log" \
+                --correlation "$correlation_token" \
+                --conclusion "$final_conclusion" \
+                >"$ART/tierb-evidence.log" 2>&1
+            evidence_rc=$?
+            evidence_lines=()
+            if mapfile -t evidence_lines <"$ART/tierb-evidence.log" \
+                && [ "${#evidence_lines[@]}" -eq 1 ]; then
+                evidence_marker="${evidence_lines[0]}"
+                case "$evidence_rc:$evidence_marker" in
+                    "0:TIER B EVIDENCE PASS: "*|\
+                    "1:TIER B EVIDENCE FAIL: "*|\
+                    "2:TIER B EVIDENCE BLOCKED: at least one job reported BLOCKED and the workflow run failed")
+                        evidence_ready=1
+                        break
+                        ;;
+                esac
+            fi
+        fi
+        if [ "$evidence_attempt" -lt 30 ]; then
+            sleep 5
+        fi
+    done
+    if [ "$evidence_ready" -ne 1 ]; then
+        record "B*" BLOCKED "complete source-bound Tier B job evidence did not become available within the bounded retry window"
         return
     fi
-    python3 -B scripts/check_tier_b_status_log.py \
-        --log "$ART/tierb-full.log" \
-        --correlation "$correlation_token" \
-        --conclusion "$final_conclusion" \
-        >"$ART/tierb-evidence.log" 2>&1
-    evidence_rc=$?
-    if ! mapfile -t evidence_lines <"$ART/tierb-evidence.log"; then
-        record "B*" BLOCKED "could not read the Tier B evidence verdict"
-        return
-    fi
-    if [ "${#evidence_lines[@]}" -ne 1 ]; then
-        record "B*" BLOCKED "Tier B evidence checker emitted an invalid verdict shape"
-        return
-    fi
-    evidence_marker="${evidence_lines[0]}"
     case "$evidence_rc:$evidence_marker" in
         "0:TIER B EVIDENCE PASS: "*)
             if resolve_tier_b_g6 "$run_id"; then
