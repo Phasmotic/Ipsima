@@ -1,6 +1,7 @@
 # SwiftFormat configuration — mirrors runner conventions.
---swiftversion 5.10
---enable blankLinesAtStartOfScope,blankLinesBetweenScopes,isEmpty,sortedImports,wrapArguments
+--swiftversion 6.0
+--enable blankLinesAtStartOfScope,blankLinesBetweenScopes,isEmpty,sortImports,wrapArguments
+--disable wrapMultilineStatementBraces
 --maxwidth 120
 --indent 4
 --self insert

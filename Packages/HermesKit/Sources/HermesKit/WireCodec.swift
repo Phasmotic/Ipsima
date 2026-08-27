@@ -1,10 +1,10 @@
+import Foundation
+
 // Line framing + canonical encoding for the tui_gateway WebSocket protocol.
 //
 // Canonical form: UTF-8, compact separators, lexicographically sorted object
 // keys, forward slashes unescaped. Every committed fixture is stored in this
 // form, which is what makes the G3 byte-identity gate well-defined.
-
-import Foundation
 
 public struct WireCodec: Sendable {
     public static let shared = WireCodec()
@@ -13,9 +13,9 @@ public struct WireCodec: Sendable {
     private let encoder: JSONEncoder
 
     public init() {
-        decoder = JSONDecoder()
-        encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        self.decoder = JSONDecoder()
+        self.encoder = JSONEncoder()
+        self.encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
     }
 
     /// Decode one newline-delimited frame.
@@ -23,12 +23,12 @@ public struct WireCodec: Sendable {
         guard let data = line.data(using: .utf8) else {
             throw CodecError.invalidUTF8
         }
-        return try decode(data)
+        return try self.decode(data)
     }
 
     public func decode(_ data: Data) throws -> JSONRPCEnvelope {
         do {
-            return try decoder.decode(JSONRPCEnvelope.self, from: data)
+            return try self.decoder.decode(JSONRPCEnvelope.self, from: data)
         } catch {
             throw CodecError.underlying(message: "decode failed: \(error)", cause: error)
         }
@@ -37,7 +37,7 @@ public struct WireCodec: Sendable {
     /// Canonical encoding (sorted keys, no whitespace).
     public func encode(_ envelope: JSONRPCEnvelope) throws -> Data {
         do {
-            return try encoder.encode(envelope)
+            return try self.encoder.encode(envelope)
         } catch {
             throw CodecError.underlying(message: "encode failed: \(error)", cause: error)
         }
@@ -67,9 +67,9 @@ public enum CodecError: Error, CustomStringConvertible {
     public var description: String {
         switch self {
         case .invalidUTF8:
-            return "frame is not valid UTF-8"
-        case .underlying(let message, _):
-            return message
+            "frame is not valid UTF-8"
+        case let .underlying(message, _):
+            message
         }
     }
 }

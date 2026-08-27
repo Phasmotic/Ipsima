@@ -1,5 +1,5 @@
-import WidgetKit
 import SwiftUI
+import WidgetKit
 
 @main
 struct TalariaWatchWidgetsBundle: WidgetBundle {
@@ -14,15 +14,15 @@ struct RunSnapshot: TimelineEntry {
 }
 
 struct SnapshotProvider: TimelineProvider {
-    func placeholder(in context: Context) -> RunSnapshot {
+    func placeholder(in _: Context) -> RunSnapshot {
         RunSnapshot(date: .now, state: "Idle")
     }
 
-    func getSnapshot(in context: Context, completion: @escaping (RunSnapshot) -> Void) {
+    func getSnapshot(in _: Context, completion: @escaping (RunSnapshot) -> Void) {
         completion(RunSnapshot(date: .now, state: "Idle"))
     }
 
-    func getTimeline(in context: Context, completion: @escaping (Timeline<RunSnapshot>) -> Void) {
+    func getTimeline(in _: Context, completion: @escaping (Timeline<RunSnapshot>) -> Void) {
         completion(Timeline(entries: [RunSnapshot(date: .now, state: "Idle")], policy: .never))
     }
 }
@@ -48,18 +48,18 @@ struct AccessoryRoot: View {
     let entry: RunSnapshot
 
     var body: some View {
-        switch family {
-        case .accessoriesCircular, .accessoryCorner:
+        switch self.family {
+        case .accessoryCircular, .accessoryCorner:
             ZStack {
                 AccessoryWidgetBackground()
                 Image(systemName: "bolt.horizontal.circle")
             }
         case .accessoryInline:
-            Label(entry.state, systemImage: "bolt.horizontal.circle")
+            Label(self.entry.state, systemImage: "bolt.horizontal.circle")
         default: // accessoryRectangular
             VStack(alignment: .leading, spacing: 2) {
                 Text("Talaria").font(.headline)
-                Text(entry.state).font(.caption2)
+                Text(self.entry.state).font(.caption2)
             }
         }
     }

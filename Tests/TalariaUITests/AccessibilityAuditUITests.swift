@@ -6,7 +6,8 @@ import XCTest
 final class AccessibilityAuditUITests: XCTestCase {
     func testRootScreenPassesAccessibilityAudit() throws {
         guard #available(iOS 17.0, *) else {
-            throw XCTSkip("performAccessibilityAudit requires iOS 17+")
+            XCTFail("G10 requires an iOS 17+ accessibility-audit runtime")
+            return
         }
         let app = XCUIApplication()
         app.launch()

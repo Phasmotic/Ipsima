@@ -14,6 +14,7 @@ every catalog name, so regeneration drift fails the gate.
 """
 from __future__ import annotations
 
+import argparse
 import json
 import pathlib
 import sys
@@ -23,8 +24,8 @@ CATALOG = REPO / "protocol" / "methods.json"
 OUT = REPO / "Packages" / "HermesKit" / "Tests" / "HermesKitTests" / "ProtocolConformanceTests.swift"
 
 
-def main() -> int:
-    catalog = json.loads(CATALOG.read_text())
+def main(output: pathlib.Path = OUT) -> int:
+    catalog = json.loads(CATALOG.read_text(encoding="utf-8"))
     names = ([("method", m["name"]) for m in catalog.get("requests", [])]
              + [("event", e["name"]) for e in catalog.get("events", [])])
     if not names:
@@ -82,10 +83,14 @@ def main() -> int:
         lines.append("")
 
     lines.append("}")
-    OUT.write_text("\n".join(lines) + "\n")
-    print(f"wrote {OUT} ({len(seen)} tests)")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_bytes(("\n".join(lines) + "\n").encode("utf-8"))
+    print(f"wrote {output} ({len(seen)} tests)")
     return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--output", type=pathlib.Path, default=OUT)
+    args = parser.parse_args()
+    sys.exit(main(args.output))

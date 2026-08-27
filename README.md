@@ -20,18 +20,22 @@ App/                   Thin SwiftUI shells: Talaria (iOS), TalariaWidgets, Talar
                        TalariaWatchWidgets
 protocol/methods.json  Machine-readable method/event catalog (derived from Hermes source)
 Tests/Fixtures/        Sanitized golden JSON-RPC frame recordings (conformance substrate)
-scripts/gauntlet.sh    Tier A gates (Linux/Docker) in one invocation; --tier-b dispatches CI
+scripts/gauntlet.ps1   PowerShell → WSL entry for Tier A; -TierB dispatches macOS CI
+scripts/gauntlet.sh    Internal native-Linux gate runner invoked by gauntlet.ps1
 ```
 
 ## The gauntlet
 
-```bash
-./scripts/gauntlet.sh              # Tier A: build, tests, conformance, lint, secrets, determinism
-./scripts/gauntlet.sh --tier-b     # dispatch + follow the macOS CI workflow
+```powershell
+pwsh -File scripts/gauntlet.ps1             # Tier A: build, tests, conformance, lint, secrets
+pwsh -File scripts/gauntlet.ps1 -TierB      # dispatch + follow the macOS CI workflow
 ```
 
-Tier A runs locally in pinned containers (`swift:6.3-noble`, matching the Xcode 26.6 toolchain
-that `macos-26` CI ships). Every gate must be green before push; Tier B before any PR merge.
+Tier A runs native Swift 6.3.3 in PowerShell-launched WSL Ubuntu, matching the compiler in the
+Xcode 26.6 toolchain on `macos-26`. The compiler, SwiftFormat, and SwiftLint versions are checked
+exactly; release assets are hash-verified. The native environment is version-pinned but not
+container-hermetic, so Tier B remains authoritative. The final green sentinel requires every
+armed gate genuinely green; repair checkpoints may preserve explicitly named honest-red gates.
 A gate is never weakened to pass — see `docs/GOVERNANCE.md`.
 
 ## Security posture

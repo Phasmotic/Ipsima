@@ -1,5 +1,5 @@
-import XCTest
 @testable import HermesKit
+import XCTest
 
 /// Seed codec coverage. Golden-frame conformance (G3) extends these once real
 /// captures land in Tests/Fixtures/.
@@ -16,7 +16,7 @@ final class WireCodecTests: XCTestCase {
         XCTAssertEqual(envelope.additionalMembers["future_field"],
                        .object(["a": .int(1)]))
 
-        let reEncoded = String(data: try codec.encode(envelope), encoding: .utf8)
+        let reEncoded = try String(data: codec.encode(envelope), encoding: .utf8)
         XCTAssertEqual(
             reEncoded,
             #"{"future_field":{"a":1},"jsonrpc":"2.0","method":"message.delta","params":{"text":"hi"}}"#
@@ -27,10 +27,10 @@ final class WireCodecTests: XCTestCase {
         let messy = #"{"params":{"zebra":1,"alpha":[true,null,"x"]},"jsonrpc":"2.0","id":7,"method":"session.list"}"#
         let envelope = try codec.decodeLine(messy)
         let first = try codec.encode(envelope)
-        let second = try codec.encode(try codec.decode(first))
+        let second = try codec.encode(self.codec.decode(first))
 
         XCTAssertEqual(first, second, "decode→encode must reach a fixed point")
-        let text = String(data: first, encoding: .utf8)!
+        let text = try XCTUnwrap(String(data: first, encoding: .utf8))
         XCTAssertTrue(text.hasPrefix(#"{"id":7,"jsonrpc":"2.0""#), "keys must sort: \(text)")
         XCTAssertFalse(text.contains(" "), "no insignificant whitespace: \(text)")
     }
@@ -38,7 +38,7 @@ final class WireCodecTests: XCTestCase {
     func testIntegerStaysIntegerAcrossRoundTrip() throws {
         let envelope = try codec.decodeLine(#"{"jsonrpc":"2.0","method":"gateway.ready","params":{"replay_epoch":3}}"#)
         XCTAssertEqual(envelope.params?["replay_epoch"], .int(3))
-        let text = String(data: try codec.encode(envelope), encoding: .utf8)!
+        let text = try XCTUnwrap(try String(data: codec.encode(envelope), encoding: .utf8))
         XCTAssertTrue(text.contains(#""replay_epoch":3"#), "int must not widen: \(text)")
     }
 
@@ -50,7 +50,7 @@ final class WireCodecTests: XCTestCase {
         XCTAssertEqual(envelope.error?.code, -32601)
         XCTAssertEqual(envelope.error?.additionalMembers["trace_id"], .string("abc"))
 
-        let text = String(data: try codec.encode(envelope), encoding: .utf8)!
+        let text = try XCTUnwrap(try String(data: codec.encode(envelope), encoding: .utf8))
         XCTAssertTrue(text.contains(#""trace_id":"abc""#))
     }
 
@@ -65,34 +65,40 @@ final class WireCodecTests: XCTestCase {
     // MARK: - Framing
 
     func testSplitFramesHandlesBatchTrailingNewlineAndBlanks() throws {
-        let a = try codec.frame(.request(id: 1, method: "session.list"))
-        let b = try codec.frame(.notification(method: "prompt.submit"))
+        let requestFrame = try codec.frame(.request(id: 1, method: "session.list"))
+        let notificationFrame = try codec.frame(.notification(method: "prompt.submit"))
         var stream = Data()
-        stream.append(a)
-        stream.append(b)
+        stream.append(requestFrame)
+        stream.append(notificationFrame)
         stream.append(Data("\n".utf8)) // stray blank line
 
-        let frames = codec.splitFrames(stream)
+        let frames = self.codec.splitFrames(stream)
         XCTAssertEqual(frames.count, 2)
-        XCTAssertEqual(try codec.decode(frames[0]).method, "session.list")
-        XCTAssertEqual(try codec.decode(frames[1]).method, "prompt.submit")
+        XCTAssertEqual(try self.codec.decode(frames[0]).method, "session.list")
+        XCTAssertEqual(try self.codec.decode(frames[1]).method, "prompt.submit")
     }
 
     // MARK: - Fixtures
 
     /// Every golden fixture must decode; canonical re-encodes must be stable.
-    /// Zero fixture files means zero iterations until captures land (P0 wires
-    /// them up later in-phase).
     func testAllGoldenFixturesDecodeAndReEncodeIdentically() throws {
         let fixtureURL = Bundle.module.url(forResource: "golden", withExtension: "jsonl")
         guard let fixtureURL else {
-            return  // captures not yet present
+            XCTFail("golden.jsonl is required; zero-frame conformance is invalid")
+            return
         }
         let text = try String(contentsOf: fixtureURL, encoding: .utf8)
-        for line in text.split(separator: "\n") where !line.isEmpty {
+        let lines = text.split(separator: "\n")
+        XCTAssertFalse(lines.isEmpty, "golden.jsonl must contain at least one frame")
+        for line in lines {
             let envelope = try codec.decodeLine(String(line))
             let canonical = try codec.encode(envelope)
-            let again = try codec.encode(try codec.decode(canonical))
+            XCTAssertEqual(
+                canonical,
+                Data(line.utf8),
+                "Swift canonical encoding differs from the committed fixture: \(line)"
+            )
+            let again = try codec.encode(self.codec.decode(canonical))
             XCTAssertEqual(canonical, again, "unstable canonical form for: \(line)")
         }
     }

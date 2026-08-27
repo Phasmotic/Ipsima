@@ -9,27 +9,48 @@ import XCTest
 ///      main-thread clause arms in P2 when live streams exist.
 final class LaunchPerformanceUITests: XCTestCase {
     @MainActor
-    func testLaunchMetricBaselineRecorded() throws {
+    func testLaunchMetricBaselineRecorded() {
         let app = XCUIApplication()
-        app.launch()
+        let rootElement = app.staticTexts["Talaria"]
+        self.terminateAndAssertNotRunning(app)
 
         let metric = XCTApplicationLaunchMetric()
         measure(metrics: [metric]) {
-            app.terminate()
+            XCTAssertEqual(app.state, .notRunning, "launch metric must start with the app terminated")
             app.launch()
+            XCTAssertTrue(
+                rootElement.waitForExistence(timeout: 10),
+                "expected root element did not appear during the measured launch"
+            )
+            self.terminateAndAssertNotRunning(app)
         }
     }
 
     @MainActor
-    func testColdLaunchWithinBudget() throws {
+    func testColdLaunchWithinBudget() {
         let app = XCUIApplication()
+        let rootElement = app.staticTexts["Talaria"]
+        self.terminateAndAssertNotRunning(app)
 
         let clock = ContinuousClock()
-        let elapsed = try clock.measure {
+        let elapsed = clock.measure {
+            XCTAssertEqual(app.state, .notRunning, "cold-launch timer must start with the app terminated")
             app.launch()
-            _ = app.staticTexts["Talaria"].waitForExistence(timeout: 10)
+            XCTAssertTrue(
+                rootElement.waitForExistence(timeout: 10),
+                "expected root element did not appear before cold-launch timing stopped"
+            )
         }
 
         XCTAssertLessThan(elapsed, .seconds(3), "cold launch exceeded the 3 s budget")
+    }
+
+    @MainActor
+    private func terminateAndAssertNotRunning(_ app: XCUIApplication) {
+        app.terminate()
+        XCTAssertTrue(
+            app.wait(for: .notRunning, timeout: 10),
+            "application did not reach the terminated state"
+        )
     }
 }

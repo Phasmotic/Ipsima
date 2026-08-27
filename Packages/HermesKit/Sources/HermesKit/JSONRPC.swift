@@ -1,11 +1,11 @@
+import Foundation
+
 // JSON-RPC 2.0 envelope types for the tui_gateway WebSocket protocol.
 //
 // Framing contract (docs/PROTOCOL.md): newline-delimited JSON-RPC, both
 // directions. Envelopes preserve *unknown* members through decode/encode so
 // golden-frame round-trips stay byte-identical even when the gateway carries
 // fields this catalog predates.
-
-import Foundation
 
 public enum JSONRPCID: Sendable, Equatable, Hashable {
     case int(Int64)
@@ -30,9 +30,9 @@ extension JSONRPCID: Codable {
     public func encode(to encoder: Encoder) throws {
         var container = encoder.singleValueContainer()
         switch self {
-        case .int(let value):
+        case let .int(value):
             try container.encode(value)
-        case .string(let value):
+        case let .string(value):
             try container.encode(value)
         }
     }
@@ -70,7 +70,7 @@ public struct JSONRPCError: Sendable, Equatable {
         self.additionalMembers = additionalMembers
     }
 
-    private enum KnownKeys: String, CodingKey {
+    private enum KnownKeys: String, CodingKey, CaseIterable {
         case code, message, data
     }
 }
@@ -78,28 +78,28 @@ public struct JSONRPCError: Sendable, Equatable {
 extension JSONRPCError: Codable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: KnownKeys.self)
-        code = try container.decode(Int64.self, forKey: .code)
-        message = try container.decode(String.self, forKey: .message)
-        data = try container.decodeIfPresent(JSONValue.self, forKey: .data)
+        self.code = try container.decode(Int64.self, forKey: .code)
+        self.message = try container.decode(String.self, forKey: .message)
+        self.data = try container.decodeIfPresent(JSONValue.self, forKey: .data)
 
         var extras: [String: JSONValue] = [:]
         let dynamic = try decoder.container(keyedBy: DynamicKey.self)
         for key in dynamic.allKeys
-        where !KnownKeys.allCases.contains(where: { $0.rawValue == key.stringValue }) {
+            where !KnownKeys.allCases.contains(where: { $0.rawValue == key.stringValue }) {
             extras[key.stringValue] = try dynamic.decode(JSONValue.self, forKey: key)
         }
-        additionalMembers = extras
+        self.additionalMembers = extras
     }
 
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: KnownKeys.self)
-        try container.encode(code, forKey: .code)
-        try container.encode(message, forKey: .message)
-        try container.encodeIfPresent(data, forKey: .data)
+        try container.encode(self.code, forKey: .code)
+        try container.encode(self.message, forKey: .message)
+        try container.encodeIfPresent(self.data, forKey: .data)
 
-        if !additionalMembers.isEmpty {
+        if !self.additionalMembers.isEmpty {
             var dynamic = encoder.container(keyedBy: DynamicKey.self)
-            for (key, value) in additionalMembers.sorted(by: { $0.key < $1.key }) {
+            for (key, value) in self.additionalMembers.sorted(by: { $0.key < $1.key }) {
                 try dynamic.encode(value, forKey: DynamicKey(stringValue: key)!)
             }
         }
@@ -135,7 +135,7 @@ public struct JSONRPCEnvelope: Sendable, Equatable {
         self.additionalMembers = additionalMembers
     }
 
-    private enum KnownKeys: String, CodingKey {
+    private enum KnownKeys: String, CodingKey, CaseIterable {
         case jsonrpc
         case id
         case method
@@ -144,10 +144,21 @@ public struct JSONRPCEnvelope: Sendable, Equatable {
         case error
     }
 
-    public var isRequest: Bool { method != nil && id != nil }
-    public var isNotification: Bool { method != nil && id == nil }
-    public var isSuccess: Bool { method == nil && error == nil && result != nil }
-    public var isError: Bool { method == nil && error != nil }
+    public var isRequest: Bool {
+        self.method != nil && self.id != nil
+    }
+
+    public var isNotification: Bool {
+        self.method != nil && self.id == nil
+    }
+
+    public var isSuccess: Bool {
+        self.method == nil && self.error == nil && self.result != nil
+    }
+
+    public var isError: Bool {
+        self.method == nil && self.error != nil
+    }
 }
 
 extension JSONRPCEnvelope: Codable {
@@ -157,65 +168,65 @@ extension JSONRPCEnvelope: Codable {
         // responses that carry no payload). decodeIfPresent would erase them
         // and break byte-identical re-encoding.
         let container = try decoder.container(keyedBy: KnownKeys.self)
-        jsonrpc = try container.decode(String.self, forKey: .jsonrpc)
+        self.jsonrpc = try container.decode(String.self, forKey: .jsonrpc)
 
         if container.contains(.id),
            case .null = try container.decode(JSONValue.self, forKey: .id) {
-            id = nil // a literal null id is tolerated and treated as absent
+            self.id = nil // a literal null id is tolerated and treated as absent
         } else if container.contains(.id) {
-            id = try container.decode(JSONRPCID.self, forKey: .id)
+            self.id = try container.decode(JSONRPCID.self, forKey: .id)
         } else {
-            id = nil
+            self.id = nil
         }
 
-        method = container.contains(.method)
+        self.method = container.contains(.method)
             ? try container.decode(String.self, forKey: .method)
             : nil
-        params = container.contains(.params)
+        self.params = container.contains(.params)
             ? try container.decode(JSONValue.self, forKey: .params)
             : nil
-        result = container.contains(.result)
+        self.result = container.contains(.result)
             ? try container.decode(JSONValue.self, forKey: .result)
             : nil
-        error = container.contains(.error)
+        self.error = container.contains(.error)
             ? try container.decode(JSONRPCError.self, forKey: .error)
             : nil
 
         var extras: [String: JSONValue] = [:]
         let dynamic = try decoder.container(keyedBy: DynamicKey.self)
         for key in dynamic.allKeys
-        where !KnownKeys.allCases.contains(where: { $0.rawValue == key.stringValue }) {
+            where !KnownKeys.allCases.contains(where: { $0.rawValue == key.stringValue }) {
             extras[key.stringValue] = try dynamic.decode(JSONValue.self, forKey: key)
         }
-        additionalMembers = extras
+        self.additionalMembers = extras
     }
 
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: KnownKeys.self)
-        try container.encode(jsonrpc, forKey: .jsonrpc)
-        try container.encodeIfPresent(id, forKey: .id)
-        try container.encodeIfPresent(method, forKey: .method)
-        try container.encodeIfPresent(params, forKey: .params)
-        try container.encodeIfPresent(result, forKey: .result)
-        try container.encodeIfPresent(error, forKey: .error)
+        try container.encode(self.jsonrpc, forKey: .jsonrpc)
+        try container.encodeIfPresent(self.id, forKey: .id)
+        try container.encodeIfPresent(self.method, forKey: .method)
+        try container.encodeIfPresent(self.params, forKey: .params)
+        try container.encodeIfPresent(self.result, forKey: .result)
+        try container.encodeIfPresent(self.error, forKey: .error)
 
-        if !additionalMembers.isEmpty {
+        if !self.additionalMembers.isEmpty {
             var dynamic = encoder.container(keyedBy: DynamicKey.self)
-            for (key, value) in additionalMembers.sorted(by: { $0.key < $1.key }) {
+            for (key, value) in self.additionalMembers.sorted(by: { $0.key < $1.key }) {
                 try dynamic.encode(value, forKey: DynamicKey(stringValue: key)!)
             }
         }
     }
 }
 
-extension JSONRPCEnvelope {
+public extension JSONRPCEnvelope {
     /// A client request with a monotonically increasing integer id.
-    public static func request(id: Int64, method: String, params: JSONValue? = nil) -> JSONRPCEnvelope {
+    static func request(id: Int64, method: String, params: JSONValue? = nil) -> JSONRPCEnvelope {
         JSONRPCEnvelope(id: .int(id), method: method, params: params)
     }
 
     /// A server-pushed event or a client notification (no id).
-    public static func notification(method: String, params: JSONValue? = nil) -> JSONRPCEnvelope {
+    static func notification(method: String, params: JSONValue? = nil) -> JSONRPCEnvelope {
         JSONRPCEnvelope(method: method, params: params)
     }
 }
