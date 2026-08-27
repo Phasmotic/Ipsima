@@ -100,6 +100,149 @@ new connection continues an old event stream. Because the catalog inventories id
 than every payload member, the pinned source and sanitized captures remain authoritative for the
 readiness payload.
 
+## Outbound approval webhook
+
+### Stock-Hermes capability verdict
+
+At the pinned commit, stock Hermes **can** send `pre_approval_request` through `hooks.outbound`;
+Talaria does not need a Hermes fork or protocol patch for approval wakeups.
+
+The source chain is explicit. Every upstream path below is evaluated at the immutable commit
+named in this document's provenance section:
+
+1. `hermes_cli/plugins.py:234-249` registers `pre_approval_request` as a valid observer-only
+   lifecycle hook.
+2. `agent/outbound_webhooks.py:268-329` accepts every configured event in that valid-hook set. A
+   target `matcher` is ignored for approval events; it applies only to `pre_tool_call` and
+   `post_tool_call`.
+3. `agent/outbound_webhooks.py:156-207` registers the event callback with the plugin manager, and
+   `gateway/run.py:12793-12806` loads that configuration during ordinary gateway startup.
+4. `tools/approval.py:4382-4463` fires `pre_approval_request` after queueing the approval and
+   before the normal gateway notification callback. The hook return value cannot approve, deny,
+   delay, or replace the native approval flow.
+
+The HTTP worker is asynchronous, so enqueue order does not guarantee that a remote webhook
+arrives before the gateway's native notification.
+
+`HERMES_SAFE_MODE=1` disables outbound registration. Delivery is an advisory wakeup, not an
+approval decision or a durable queue.
+
+### Exact HTTP request
+
+The callback in `agent/outbound_webhooks.py:380-455` sends an HTTP `POST` with a UTF-8 JSON body.
+The body is produced by Python
+`json.dumps(payload, ensure_ascii=False, default=str)`: keys are not sorted, ordinary Python JSON
+separators are retained, unsupported values are stringified, and no trailing newline is added.
+Receivers must verify the signature over the raw bytes; re-serializing parsed JSON changes the
+signed representation.
+
+A normal gateway approval has this shape. Placeholder strings describe source fields; they are
+not captured values:
+
+```json
+{
+  "hook_event_name": "pre_approval_request",
+  "tool_name": null,
+  "tool_input": null,
+  "session_id": "<bound Hermes session identifier or empty>",
+  "cwd": "<sensitive sender working directory or empty>",
+  "extra": {
+    "command": "<entire hook command after surface/configuration redaction>",
+    "description": "<approval reason>",
+    "pattern_key": "<primary approval pattern>",
+    "pattern_keys": ["<approval pattern>"],
+    "session_key": "<Hermes routing session key>",
+    "surface": "gateway",
+    "turn_id": "<turn identifier or empty>",
+    "tool_call_id": "<tool-call identifier or empty>",
+    "telemetry_schema_version": "hermes.observer.v1"
+  },
+  "delivery_id": "<UUIDv4 as 32 lowercase hexadecimal characters>",
+  "timestamp": "<UTC ISO-8601 timestamp ending in Z>"
+}
+```
+
+`session_id` falls back from `session_id` to `parent_session_id` and then to the empty string.
+`cwd` comes from the sender process and is sensitive. Every hook argument other than
+`tool_name`, `args`, `session_id`, and `parent_session_id` is placed under `extra`.
+`tools/approval.py:108-138` adds the current turn, tool call, and bound session context.
+`hermes_cli/plugins.py:5238-5244` injects `telemetry_schema_version`; its value is defined at
+`hermes_cli/middleware.py:17`.
+
+For ordinary gateway approvals, the `command` and `description` values are the entire strings
+supplied to the hook after surface- and configuration-dependent redaction
+(`tools/approval.py:3765-3777,4965-4997`). They can still contain sensitive text if redaction does
+not cover it. Smart and other approval surfaces have different redaction paths. The outbound
+serializer performs no additional sanitization, so every surface must be treated as sensitive.
+
+The ordinary gateway path at `tools/approval.py:4451-4459` does **not** include the approval
+queue's `request_id`. The queue entry creates that identifier at `tools/approval.py:2779-2787`.
+Some approval-transport paths add `request_id` and `request_digest`
+(`tools/approval.py:4213-4223`), and a coalesced follower can add `coalesced`
+(`tools/approval.py:4310-4319`), so receivers must tolerate those extra members without depending
+on them. A Talaria wakeup reconnects to the gateway, calls `approval.pending` to obtain the
+authoritative pending record and `request_id`, and only then uses `approval.respond`; those
+handlers are source-defined at `tui_gateway/methods_prompt.py:1588-1690`.
+
+Pinned source does not guarantee a nonempty top-level `session_id`; the serializer explicitly
+falls back to an empty string. `extra.session_key` is internal structured routing state and is not
+a privacy-safe substitute. ADR-0001 therefore permits a push only when the bridge can alias a
+nonempty bound session ID and otherwise relies on foreground/background reconciliation.
+
+The request headers are:
+
+```text
+Content-Type: application/json
+User-Agent: Hermes-Agent-Outbound-Webhook
+X-Hermes-Event: pre_approval_request
+X-Hermes-Delivery: <the body's delivery_id>
+X-Hermes-Signature-256: sha256=<lowercase hexadecimal HMAC>
+```
+
+The signature is HMAC-SHA-256 over the exact raw body bytes, keyed by the UTF-8 bytes of the
+resolved secret. Secret resolution is defined at `agent/outbound_webhooks.py:358-373`: a configured
+`secret_env` takes precedence over an inline `secret`. If that environment lookup is absent or
+empty, Hermes does not fall back to the inline value and omits the signature; with no usable
+secret it also sends unsigned. Talaria's push ingress must require a configured secret and reject
+an absent, malformed, or invalid signature.
+
+The HMAC authenticates only the body; it does not cover the HTTP headers. After verifying the raw
+body, a receiver must require the authenticated `hook_event_name` to match `X-Hermes-Event` and
+the authenticated `delivery_id` to match `X-Hermes-Delivery`. A header value alone is not event or
+delivery identity.
+
+There is no key identifier, rotation metadata, timestamp header, sender-enforced freshness
+window, nonce store, or replay rejection. The body timestamp and delivery ID are authenticated
+only when the signature is present. Receivers must enforce freshness and deduplicate delivery
+IDs themselves.
+
+### Delivery semantics and privacy boundary
+
+`agent/outbound_webhooks.py:89-99,221-231,331-340,458-569` implements best-effort delivery through
+one daemon worker and a nondurable in-memory queue of 256 items. Enqueue is nonblocking and drops
+a new event when full. The default per-attempt timeout is 10 seconds and is clamped to 1–60
+seconds. Hermes makes at most two attempts, waiting one second before the retry; it retries server
+errors and connection failures, but not redirects or client errors. Redirects are not followed,
+response bodies are ignored, and process-exit flushing is best-effort for at most five seconds. A
+retry reuses the same body, timestamp, delivery ID, and signature.
+
+Stock Hermes accepts plain HTTP with a warning. Talaria's architecture requires HTTPS and treats
+the webhook only as a lossy wakeup hint; foreground and background reconciliation remain
+authoritative.
+
+The raw approval webhook contains the entire hook-supplied command and description—which can
+include unredacted sensitive text—and the sender's working directory. Making the eventual APNs
+payload contentless does not erase that ingress disclosure. Consequently, a hosted APNs relay
+must not receive the raw Hermes webhook directly. The gateway-side privacy bridge and central
+relay boundary are fixed by
+[ADR-0001](adr/0001-contentless-approval-push.md).
+
+The pinned upstream repository already documents generic approval hooks and outbound webhooks at
+`website/docs/user-guide/features/hooks.md:1268-1297,1840-1924`. What it does not present in one
+place is the approval-specific outbound body together with the ordinary gateway path's absent
+queue `request_id`. This section records that cross-source contract; it is not evidence that the
+generic upstream feature is undocumented.
+
 ## Catalog and conformance regeneration
 
 Catalog regeneration requires a Git object database that contains the pinned Hermes commit and

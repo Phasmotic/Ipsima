@@ -12,9 +12,10 @@ revise it. Expensive-to-reconstruct findings and evidence belong in the reposito
 or issue rather than only in a conversation. Public evidence must contain repository-relative
 paths only and must exclude local environment details and sensitive data.
 
-Audit repair closed at `96df2d0`. The current authorized workstream is to record the revised
-phase plan, derive the outbound-hook notification facts from pinned Hermes source, and land the
-push architecture as an ADR. It must stop before P1 implementation begins.
+Audit repair closed at `96df2d0`. The revised phase plan, pinned-source outbound-hook finding,
+and pre-code push architecture are now recorded in this brief, `docs/PROTOCOL.md`, and
+[ADR-0001](adr/0001-contentless-approval-push.md). P1 implementation has not begun and is outside
+this run.
 
 ### Coordination record
 
@@ -98,17 +99,24 @@ P3)**. The condition is authoritative; the phase number is only the current plan
 
 ### P4 — Notifications, background, and system integration
 
-Before P4 code, pinned Hermes source must establish whether `hooks.outbound` can subscribe to
-`pre_approval_request`, and `docs/PROTOCOL.md` must record the outbound webhook body and signing
-format. If stock Hermes supports the event, the user points `hooks.outbound` at an external relay
-and the app registers its APNs token directly with that relay; Hermes never handles device
-tokens. If it does not, record the exact source limitation for a possible generic upstream
-contribution after P3—do not open it yet, fork Hermes, or patch Hermes locally.
+Pinned Hermes source establishes that stock `hooks.outbound` can subscribe to
+`pre_approval_request`; no Hermes fork or protocol patch is needed. `docs/PROTOCOL.md` records the
+exact body, HMAC signing, and best-effort delivery contract. Because the raw webhook contains the
+command and sender working directory, the user points it at a user-controlled gateway-side
+privacy bridge. The app registers its APNs token directly with the separate APNs delivery relay;
+Hermes and the privacy bridge never handle that device token.
 
-The complete push design must be accepted as an ADR before implementation. Push payloads are
-contentless and contain only an opaque run or session identifier; the app wakes and fetches
-details from the user's gateway over TLS. The relay stays outside Hermes because it holds the
-APNs signing key bound to Talaria's bundle identifier, and it never receives command text.
+[ADR-0001](adr/0001-contentless-approval-push.md) fixes the trust boundary, closed relay schema,
+and contentless APNs contract. The bridge verifies and minimizes the webhook before the hosted
+relay trust boundary. APNs payloads contain only the required background member and an opaque
+session alias; the app wakes and fetches details from the user's gateway over TLS.
+The APNs relay stays outside Hermes because it holds the signing key bound to Talaria's bundle
+identifier, and its protocol never receives command text. P4 implementation remains blocked until
+its operational threat model fixes rate limits, registration expiry, abuse controls, credential
+rotation and recovery, bridge packaging, deletion verification, bound-session coverage, and the
+alias-linkability decision. No upstream issue, pull request, fork, or patch is required or
+authorized; any later documentation or adoption proposal belongs to hard-gated P7 and requires
+explicit owner authorization.
 
 P4 also includes Live Activity and Dynamic Island status for an in-flight run, approval
 notifications, background refresh and foreground reconciliation, home and lock-screen widgets,
@@ -312,6 +320,7 @@ work in this order; do not combine these steps with audit repair:
 4. Only after every armed Phase 0 gate is genuinely green, emit
    `GAUNTLET GREEN — PHASE 0` on its own line and stop. Do not begin P1 in that run.
 
-P7 is hard-gated. Do not begin signing, account configuration, or distribution work until the
-owner explicitly authorizes P7 and the required distribution credential is provisioned through
-repository secrets. No earlier phase or general build authorization implies that permission.
+P7 is hard-gated. Do not begin any P7 work—including signing, account configuration,
+distribution, adoption artifacts, or upstream proposals—until the owner explicitly authorizes P7.
+Distribution work additionally requires the necessary credential to be provisioned through
+repository secrets. No earlier phase or general build authorization implies either permission.

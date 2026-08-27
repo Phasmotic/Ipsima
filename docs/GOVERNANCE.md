@@ -14,19 +14,26 @@ condition or authorize work from another phase.
 | P4 | Deliver notifications, background behavior, and system integrations only after the outbound-hook facts and push ADR are recorded. |
 | P5 | Deliver parity surfaces and deliberate iPad layouts. |
 | P6 | Deliver watchOS, including WatchConnectivity and an independent networking fallback. |
-| P7 | Perform signing, distribution, and the adoption package only with explicit owner authorization and provisioned credentials. |
+| P7 | Perform signing, distribution, and the adoption package only with explicit owner authorization; signing and distribution additionally require provisioned credentials. |
 
-P4 has a pre-code source gate. Pinned Hermes source must establish whether `hooks.outbound` can
-subscribe to `pre_approval_request`, and `docs/PROTOCOL.md` must record the webhook body and
-signing format. If stock Hermes supports it, device tokens go directly from Talaria to an
-external relay and never through Hermes. If it does not, record the exact limitation for a
-possible generic upstream contribution after P3; do not open that contribution, fork Hermes, or
-patch Hermes locally during the earlier phases.
+The P4 pre-code source gate is satisfied for the Hermes commit pinned by `protocol/methods.json`.
+Stock `hooks.outbound` can subscribe to `pre_approval_request`; `docs/PROTOCOL.md` records the
+source chain, body, HMAC signing, and best-effort delivery semantics. Revalidate those facts on
+every Hermes pin change. No Hermes fork or protocol patch is authorized.
 
-The P4 ADR must precede implementation. Push payloads are contentless—only an opaque run or
-session identifier—and Talaria fetches details from the user's gateway over TLS. The relay stays
-outside Hermes because it holds Talaria's bundle-bound APNs signing key and must never receive
-command text.
+[ADR-0001](adr/0001-contentless-approval-push.md) precedes and governs P4 implementation. Talaria
+sends APNs device tokens directly to the APNs delivery relay, never through Hermes or the
+gateway-side privacy bridge. The bridge receives the sensitive raw webhook inside the user's
+trust boundary, verifies and minimizes it, then sends the hosted relay only the closed ADR schema.
+APNs payloads contain only the required background member and an opaque session alias, Talaria
+fetches details from the gateway over TLS, and the hosted relay protocol never receives command
+text.
+
+P4 code remains blocked until its operational threat model fixes rate limits, registration
+expiry, abuse controls, credential rotation and recovery, bridge packaging, and deletion
+verification, plus bound-session coverage and the alias-linkability decision. No upstream issue,
+pull request, fork, or patch is required or authorized. Any future documentation or adoption
+proposal belongs to hard-gated P7 and requires explicit owner authorization.
 
 ## Gate integrity
 
