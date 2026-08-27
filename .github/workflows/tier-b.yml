@@ -40,7 +40,8 @@ jobs:
         run: |
           python3 -B -m unittest \
             scripts.test_check_xcode_log \
-            scripts.test_check_xcresult_tests
+            scripts.test_check_xcresult_tests \
+            scripts.test_ensure_simulator_booted
 
       - name: Install pinned XcodeGen
         run: bash scripts/install_xcodegen.sh
@@ -97,6 +98,14 @@ jobs:
           [ -n "$SMALL_UDID" ] || { echo "::error::no small iPhone simulator found"; exit 1; }
           echo "LARGE_UDID=$LARGE_UDID" >> "$GITHUB_ENV"
           echo "SMALL_UDID=$SMALL_UDID" >> "$GITHUB_ENV"
+
+      - name: Boot small simulator and require readiness
+        run: |
+          set -euo pipefail
+          python3 -B scripts/ensure_simulator_booted.py \
+            --udid "$SMALL_UDID" 2>&1 \
+            | tee .gauntlet/small-simulator-readiness.log
+          test -s .gauntlet/small-simulator-readiness.log
 
       - name: Build app + extensions (G7, warnings-as-errors)
         run: |

@@ -76,13 +76,25 @@ class ProjectMetadataContractTests(unittest.TestCase):
 
     def test_watch_app_declares_companion_without_becoming_watch_only(self) -> None:
         settings = self.project["targets"]["TalariaWatch"]["settings"]["base"]
+        targets = self.project["targets"]
+        ios_identifier = targets["Talaria"]["settings"]["base"][
+            "PRODUCT_BUNDLE_IDENTIFIER"
+        ]
+        ios_widget_identifier = targets["TalariaWidgets"]["settings"]["base"][
+            "PRODUCT_BUNDLE_IDENTIFIER"
+        ]
+        watch_identifier = settings["PRODUCT_BUNDLE_IDENTIFIER"]
+        watch_widget_identifier = targets["TalariaWatchWidgets"]["settings"][
+            "base"
+        ]["PRODUCT_BUNDLE_IDENTIFIER"]
 
         self.assertEqual(
             settings["INFOPLIST_KEY_WKCompanionAppBundleIdentifier"],
-            self.project["targets"]["Talaria"]["settings"]["base"][
-                "PRODUCT_BUNDLE_IDENTIFIER"
-            ],
+            ios_identifier,
         )
+        self.assertEqual(ios_widget_identifier, f"{ios_identifier}.widgets")
+        self.assertEqual(watch_identifier, f"{ios_identifier}.watchkitapp")
+        self.assertEqual(watch_widget_identifier, f"{watch_identifier}.widgets")
         self.assertIs(
             settings["INFOPLIST_KEY_WKRunsIndependentlyOfCompanionApp"], True
         )

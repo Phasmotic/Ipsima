@@ -75,7 +75,7 @@ targets:
       - target: TalariaWatchWidgets   # extension embedded in the watch app
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: dev.schonfeld.talaria.watchkitapp
+        PRODUCT_BUNDLE_IDENTIFIER: dev.schonfeld.talaria.app.watchkitapp
         INFOPLIST_KEY_WKCompanionAppBundleIdentifier: dev.schonfeld.talaria.app
         INFOPLIST_KEY_WKRunsIndependentlyOfCompanionApp: YES
         SWIFT_STRICT_CONCURRENCY: complete
@@ -97,7 +97,7 @@ targets:
     settings:
       base:
         GENERATE_INFOPLIST_FILE: NO
-        PRODUCT_BUNDLE_IDENTIFIER: dev.schonfeld.talaria.watchkitapp.widgets
+        PRODUCT_BUNDLE_IDENTIFIER: dev.schonfeld.talaria.app.watchkitapp.widgets
         SKIP_INSTALL: YES
         SWIFT_STRICT_CONCURRENCY: complete
 
