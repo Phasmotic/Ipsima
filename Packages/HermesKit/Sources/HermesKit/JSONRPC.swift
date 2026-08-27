@@ -8,6 +8,7 @@ import Foundation
 // fields this catalog predates.
 
 public enum JSONRPCID: Sendable, Equatable, Hashable {
+    case null
     case int(Int64)
     case string(String)
 }
@@ -15,14 +16,16 @@ public enum JSONRPCID: Sendable, Equatable, Hashable {
 extension JSONRPCID: Codable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
-        if let value = try? container.decode(Int64.self) {
+        if container.decodeNil() {
+            self = .null
+        } else if let value = try? container.decode(Int64.self) {
             self = .int(value)
         } else if let value = try? container.decode(String.self) {
             self = .string(value)
         } else {
             throw DecodingError.dataCorruptedError(
                 in: container,
-                debugDescription: "JSON-RPC id must be a string or integer"
+                debugDescription: "JSON-RPC id must be null, a string, or an integer"
             )
         }
     }
@@ -30,6 +33,8 @@ extension JSONRPCID: Codable {
     public func encode(to encoder: Encoder) throws {
         var container = encoder.singleValueContainer()
         switch self {
+        case .null:
+            try container.encodeNil()
         case let .int(value):
             try container.encode(value)
         case let .string(value):
@@ -80,7 +85,9 @@ extension JSONRPCError: Codable {
         let container = try decoder.container(keyedBy: KnownKeys.self)
         self.code = try container.decode(Int64.self, forKey: .code)
         self.message = try container.decode(String.self, forKey: .message)
-        self.data = try container.decodeIfPresent(JSONValue.self, forKey: .data)
+        self.data = container.contains(.data)
+            ? try container.decode(JSONValue.self, forKey: .data)
+            : nil
 
         var extras: [String: JSONValue] = [:]
         let dynamic = try decoder.container(keyedBy: DynamicKey.self)
@@ -170,10 +177,7 @@ extension JSONRPCEnvelope: Codable {
         let container = try decoder.container(keyedBy: KnownKeys.self)
         self.jsonrpc = try container.decode(String.self, forKey: .jsonrpc)
 
-        if container.contains(.id),
-           case .null = try container.decode(JSONValue.self, forKey: .id) {
-            self.id = nil // a literal null id is tolerated and treated as absent
-        } else if container.contains(.id) {
+        if container.contains(.id) {
             self.id = try container.decode(JSONRPCID.self, forKey: .id)
         } else {
             self.id = nil

@@ -71,10 +71,13 @@ PUBLIC_HTTPS_ALLOWANCES = {
         }
     ),
     "protocol/methods.json": frozenset(
-        {_secure_url("json-schema.org/draft/2020-12/schema")}
+        {_secure_url("github.com/NousResearch/hermes-agent.git")}
     ),
     "scripts/derive_protocol.py": frozenset(
-        {_secure_url("json-schema.org/draft/2020-12/schema")}
+        {_secure_url("github.com/NousResearch/hermes-agent.git")}
+    ),
+    "scripts/test_derive_protocol.py": frozenset(
+        {_secure_url("github.com/NousResearch/hermes-agent.git")}
     ),
     "scripts/gauntlet.sh": frozenset(
         {

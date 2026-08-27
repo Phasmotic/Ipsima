@@ -52,6 +52,16 @@ final class WireCodecTests: XCTestCase {
 
         let text = try XCTUnwrap(try String(data: codec.encode(envelope), encoding: .utf8))
         XCTAssertTrue(text.contains(#""trace_id":"abc""#))
+
+        let parseError = try codec.decodeLine(
+            #"{"jsonrpc":"2.0","id":null,"error":{"code":-32700,"message":"Parse error","data":null}}"#
+        )
+        XCTAssertEqual(parseError.id, .null)
+        XCTAssertEqual(parseError.error?.data, .null)
+        XCTAssertEqual(
+            try String(data: self.codec.encode(parseError), encoding: .utf8),
+            #"{"error":{"code":-32700,"data":null,"message":"Parse error"},"id":null,"jsonrpc":"2.0"}"#
+        )
     }
 
     func testIDVariantsRoundTrip() throws {
@@ -60,6 +70,13 @@ final class WireCodecTests: XCTestCase {
 
         let stringID = try codec.decodeLine(#"{"jsonrpc":"2.0","id":"req-9f","method":"ping"}"#)
         XCTAssertEqual(stringID.id, .string("req-9f"))
+
+        let nullID = try codec.decodeLine(#"{"jsonrpc":"2.0","id":null,"method":"ping"}"#)
+        XCTAssertEqual(nullID.id, .null)
+
+        let absentID = try codec.decodeLine(#"{"jsonrpc":"2.0","method":"ping"}"#)
+        XCTAssertNil(absentID.id)
+        XCTAssertNotEqual(nullID, absentID)
     }
 
     // MARK: - Framing

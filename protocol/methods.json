@@ -1,20 +1,155 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Hermes tui_gateway + api_server protocol catalog",
+  "source": {
+    "repository": "https://github.com/NousResearch/hermes-agent.git",
+    "commit": "e3b5512b7b3f6cbcb23ba5fffdc66d5015eca246",
+    "inputs": [
+      {
+        "path": "gateway/platforms/api_server.py",
+        "sha256": "8d87036dd488cb811dbabb7048102d0c28fbf54e0e658c464683000118537ec3"
+      },
+      {
+        "path": "hermes_cli/dashboard_auth/ws_tickets.py",
+        "sha256": "b66e29a067002ad8a345b49281d30c75d6ec2bb177d58214611db66925bb4429"
+      },
+      {
+        "path": "hermes_cli/web_server.py",
+        "sha256": "6e1b799f7fe4e70cf1b89b58c0ac94712ae2065ed3c1b10a4d1e56f0a5a6f174"
+      },
+      {
+        "path": "tui_gateway/__init__.py",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "tui_gateway/_stdin_recovery.py",
+        "sha256": "da9f53dced966e585d88a3fd7fe4fcbf62f87b13b64ae4ca4905399cbfe4f539"
+      },
+      {
+        "path": "tui_gateway/compute_host.py",
+        "sha256": "43b4d8fc35ed03b783347956ba781d1ffe71fb9e11d1365a6c12f2c328793b63"
+      },
+      {
+        "path": "tui_gateway/entry.py",
+        "sha256": "67730336c0f28cdaf984e89cf71a85f6434eace2cbc52e4c07e5d49dc4a66d5d"
+      },
+      {
+        "path": "tui_gateway/event_publisher.py",
+        "sha256": "e79ea875f168e1cdb70e2d174875c3c6789f93ddca06350bd90b42c33f6b06d0"
+      },
+      {
+        "path": "tui_gateway/event_replay.py",
+        "sha256": "a4bb6223db7b4e26f8ad851c58d29120d90a2f7b18cb15abb774e47c4004490f"
+      },
+      {
+        "path": "tui_gateway/git_probe.py",
+        "sha256": "d3d3b5db5bd56a2f44ce0ceafcd01216ed13af259bbd408cc25379e605184f07"
+      },
+      {
+        "path": "tui_gateway/host_supervisor.py",
+        "sha256": "a2b1a45cea41080bf3c8c3ad48880815d4e1637c9c16d1d1c364011cb8142690"
+      },
+      {
+        "path": "tui_gateway/loop_noise.py",
+        "sha256": "501f6b1dd8602cf663eaa302478bea1646f2dacddea94b6dfd3dd43518128529"
+      },
+      {
+        "path": "tui_gateway/mcp_oauth_sessions.py",
+        "sha256": "179f8c89a4f2eb22410c42e31f18b152f1c418dbb6ccab9adef7bb26c4195320"
+      },
+      {
+        "path": "tui_gateway/mcp_rpc_helpers.py",
+        "sha256": "3610d0db6e2a22b80758cc995c703fbfc075412406ce2af2f23d5b70e072d627"
+      },
+      {
+        "path": "tui_gateway/method_ctx.py",
+        "sha256": "0c1742502dbfab759efa6ccdb4456f5442f06b1701d56ef7037041ba783e99a7"
+      },
+      {
+        "path": "tui_gateway/methods_bot_relay.py",
+        "sha256": "5efc1ac67eda5db118453327de2809bb1cfdb8cb0259273b60e5d23983d37eec"
+      },
+      {
+        "path": "tui_gateway/methods_browser_control.py",
+        "sha256": "aedb56267cadbd1b4b69baefbf58bf0cf7d87e59daacf04bc2625184fd6ac72d"
+      },
+      {
+        "path": "tui_gateway/methods_complete.py",
+        "sha256": "bc8f6e598589222b9fcb542ba85faeb71be926886d80fcf0b15a2511d3a4b58d"
+      },
+      {
+        "path": "tui_gateway/methods_config.py",
+        "sha256": "2ffe5fae39e8962a086d4eea7ec26c3f1d29f2bb8a97422d5606eecaa2b3f116"
+      },
+      {
+        "path": "tui_gateway/methods_images.py",
+        "sha256": "42579ba374c5312f4fa2bf5240770c60143aff8bd123ea4403f6b3dba71124a9"
+      },
+      {
+        "path": "tui_gateway/methods_profiles.py",
+        "sha256": "d4f203ba5d645702b06300cbc28f63d1d79d1394e71564d078ad123040942bb5"
+      },
+      {
+        "path": "tui_gateway/methods_prompt.py",
+        "sha256": "658c55f43608713d1de26b735a4f288ee27421f8b6a3ae7d1a8e30d6f4c967d8"
+      },
+      {
+        "path": "tui_gateway/methods_session.py",
+        "sha256": "f23f1d300343d301df67a6c7468b7f0a7dd9b427cc4a4c6fbc5cdd1fd4f49c02"
+      },
+      {
+        "path": "tui_gateway/methods_tools.py",
+        "sha256": "b86e8be84a75eaec5b7fd4b29cc1e576810c10190005bbda1688182cb2bff650"
+      },
+      {
+        "path": "tui_gateway/project_tree.py",
+        "sha256": "f9212012acfe49ded4333357ff5e10fdec665d2cec5875e59a4c75c0b018039d"
+      },
+      {
+        "path": "tui_gateway/render.py",
+        "sha256": "98debf41704110249127095105993e8fd5b1fc1647f83d9c18202cd99d70148d"
+      },
+      {
+        "path": "tui_gateway/server.py",
+        "sha256": "798f34c6ad7531d462e2f32af71ba959470bcaba7c0020d5b8bc3b96878fdd1f"
+      },
+      {
+        "path": "tui_gateway/slash_fuzzy.py",
+        "sha256": "8d79f654da8e2eae6ac790266a669f76954a5816dd9e236f5991d8fe8000678c"
+      },
+      {
+        "path": "tui_gateway/slash_worker.py",
+        "sha256": "d44b371b77106bd29c9d93e1e83218d950961f27108c377f686bd93bdf640d4a"
+      },
+      {
+        "path": "tui_gateway/synthetic_turn.py",
+        "sha256": "39c809d9956293ac9eef1cc30fa7de8b36cdc046d4407e6aacd368b93fddf8e9"
+      },
+      {
+        "path": "tui_gateway/transport.py",
+        "sha256": "75be87f545aeaffce9c2c72854fecc74e564de00df2c1cfb739ac4befaf30c8d"
+      },
+      {
+        "path": "tui_gateway/turn_marker.py",
+        "sha256": "25061212a2212af876a0db476cfe9d45369d92303f905c67dc0af3f6545b992c"
+      },
+      {
+        "path": "tui_gateway/ws.py",
+        "sha256": "efceb7cba3d206dd9ba938ec6553106352d53e43895b7beb0b3d8ae93aade1f3"
+      }
+    ]
+  },
   "derived_from": [
-    "tui_gateway/methods_*.py",
-    "tui_gateway/server.py",
-    "tui_gateway/ws.py",
-    "tui_gateway/entry.py",
+    "tui_gateway/*.py",
     "gateway/platforms/api_server.py",
+    "hermes_cli/dashboard_auth/ws_tickets.py",
     "hermes_cli/web_server.py"
   ],
   "derived_at": "2026-08-26",
-  "source_note": "Derived from installed Hermes source; regenerate with scripts/derive_protocol.py. Source wins over docs.",
+  "source_note": "Derived exclusively from pinned Git objects; mutable checkout content is ignored. Source wins over docs.",
   "framing": {
     "transport": "websocket (primary) / REST+SSE (fallback)",
     "path": "/api/ws",
-    "encoding": "newline-delimited JSON-RPC 2.0, both directions",
+    "encoding": "one JSON-RPC 2.0 object per WebSocket text message, both directions; stdio is newline-delimited",
     "event_wrapping": {
       "shape": {
         "jsonrpc": "2.0",
@@ -43,7 +178,7 @@
   "auth": {
     "websocket_gated": "?ticket=<single-use 30s ticket> minted via dashboard auth; legacy ?token= rejected",
     "websocket_loopback_or_insecure": "?token=<dashboard session token>",
-    "websocket_internal": "?internal=<process credential> \u2014 server-spawned children only, never clients",
+    "websocket_internal": "?internal=<process credential> — server-spawned children only, never clients",
     "dashboard_http_header": "X-Hermes-Session-Token (legacy Authorization: Bearer accepted)",
     "api_server": "Authorization: Bearer <API_SERVER_KEY>, required even on loopback"
   },
@@ -1119,7 +1254,8 @@
     {
       "name": "gateway.ready",
       "emitted_at": [
-        "ws.py (direct transport write at connect)"
+        "entry.py:448",
+        "ws.py:373"
       ]
     },
     {
@@ -1518,7 +1654,19 @@
       "path": "/api/sessions"
     },
     {
+      "method": "POST",
+      "path": "/api/sessions"
+    },
+    {
       "method": "GET",
+      "path": "/api/sessions/{session_id}"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/sessions/{session_id}"
+    },
+    {
+      "method": "DELETE",
       "path": "/api/sessions/{session_id}"
     },
     {
@@ -1554,6 +1702,10 @@
       "path": "/v1/responses/{response_id}"
     },
     {
+      "method": "DELETE",
+      "path": "/v1/responses/{response_id}"
+    },
+    {
       "method": "POST",
       "path": "/api/platforms/{platform}/events"
     },
@@ -1562,7 +1714,19 @@
       "path": "/api/jobs"
     },
     {
+      "method": "POST",
+      "path": "/api/jobs"
+    },
+    {
       "method": "GET",
+      "path": "/api/jobs/{job_id}"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/jobs/{job_id}"
+    },
+    {
+      "method": "DELETE",
       "path": "/api/jobs/{job_id}"
     },
     {

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import pathlib
 import shutil
 import subprocess
@@ -12,6 +13,15 @@ from scripts import check_conformance as checker
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 GAUNTLET = REPO / "scripts" / "gauntlet.sh"
+GENERATOR = REPO / "scripts" / "gen_conformance_tests.py"
+OUTPUT_NAMES = (
+    "ProtocolConformanceTests.swift",
+    "ProtocolRequestConformanceTests1.swift",
+    "ProtocolRequestConformanceTests2.swift",
+    "ProtocolRequestConformanceTests3.swift",
+    "ProtocolRequestConformanceTests4.swift",
+    "ProtocolEventConformanceTests.swift",
+)
 
 
 class CheckConformanceTests(unittest.TestCase):
@@ -20,51 +30,52 @@ class CheckConformanceTests(unittest.TestCase):
         self.repo = pathlib.Path(self.temporary.name)
         scripts = self.repo / "scripts"
         protocol = self.repo / "protocol"
-        tests = self.repo / "Packages" / "HermesKit" / "Tests" / "HermesKitTests"
-        self.fixtures = tests / "Fixtures"
+        self.tests = (
+            self.repo / "Packages" / "HermesKit" / "Tests" / "HermesKitTests"
+        )
+        self.fixtures = self.tests / "Fixtures"
         scripts.mkdir(parents=True)
         protocol.mkdir(parents=True)
         self.fixtures.mkdir(parents=True)
 
         shutil.copy2(REPO / "scripts" / "check_conformance.py", scripts)
-        shutil.copy2(REPO / "scripts" / "gen_conformance_tests.py", scripts)
-        generator_path = scripts / "gen_conformance_tests.py"
-        generator_source = generator_path.read_text(encoding="utf-8")
-        decoded_line = '        "        let decoded = try codec.decode(data)",\n'
-        equality_line = (
-            '        "        XCTAssertEqual(decoded, envelope, '
-            '\\"\\\\(kind) \\\\(name) changed on decode\\", '
-            'file: file, line: line)",\n'
-        )
-        if decoded_line not in generator_source:
-            raise AssertionError("generator fixture shape changed")
-        generator_path.write_text(
-            generator_source.replace(decoded_line, decoded_line + equality_line, 1),
-            encoding="utf-8",
-        )
-        self.valid_catalog_text = (
-            '{"requests":[{"name":"ping"}],"events":[]}\n'
+        shutil.copy2(REPO / "scripts" / "derive_protocol.py", scripts)
+        shutil.copy2(GENERATOR, scripts)
+        self.valid_catalog_text = (REPO / "protocol" / "methods.json").read_text(
+            encoding="utf-8"
         )
         self.catalog = protocol / "methods.json"
         self.catalog.write_text(self.valid_catalog_text, encoding="utf-8")
-        self.generated = tests / "ProtocolConformanceTests.swift"
-        generated = subprocess.run(
-            [
-                sys.executable,
-                "-B",
-                str(generator_path),
-                "--output",
-                str(self.generated),
-            ],
-            capture_output=True,
-            text=True,
-            cwd=self.repo,
-        )
+        self.generated_request = self.tests / OUTPUT_NAMES[0]
+        self.generated_request_test = self.tests / OUTPUT_NAMES[1]
+        self.generated_event = self.tests / OUTPUT_NAMES[-1]
+        generated = self.run_generator()
         if generated.returncode != 0:
             raise AssertionError(generated.stdout + generated.stderr)
 
     def tearDown(self) -> None:
         self.temporary.cleanup()
+
+    def run_generator(
+        self,
+        *,
+        catalog: pathlib.Path | None = None,
+        output_directory: pathlib.Path | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [
+                sys.executable,
+                "-B",
+                str(self.repo / "scripts" / "gen_conformance_tests.py"),
+                "--catalog",
+                str(catalog or self.catalog),
+                "--output-directory",
+                str(output_directory or self.tests),
+            ],
+            capture_output=True,
+            text=True,
+            cwd=self.repo,
+        )
 
     def run_checker(self) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
@@ -77,10 +88,13 @@ class CheckConformanceTests(unittest.TestCase):
     def write_fixture(self, line: str) -> None:
         (self.fixtures / "golden.jsonl").write_text(line + "\n", encoding="utf-8")
 
-    def test_valid_baseline_passes(self) -> None:
+    def test_valid_baseline_and_cross_namespace_collision_pass(self) -> None:
         self.write_fixture('{"jsonrpc":"2.0","method":"ping"}')
         result = self.run_checker()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("catalog requests: 168", result.stdout)
+        self.assertIn("catalog events  : 56", result.stdout)
+        self.assertIn("generated tests : 224", result.stdout)
         self.assertEqual(result.stdout.splitlines()[-1], "G3: PASS")
 
     def test_zero_frames_fail_for_zero_reason(self) -> None:
@@ -121,15 +135,15 @@ class CheckConformanceTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
                 self.assertIn("params must be an object or array", result.stdout)
 
-    def test_request_event_name_collision_requires_both_test_identities(self) -> None:
-        catalog = self.repo / "protocol" / "methods.json"
-        catalog.write_text(
-            '{"requests":[{"name":"session.title"}],'
-            '"events":[{"name":"session.title"}]}',
-            encoding="utf-8",
-        )
-        self.generated.write_text(
-            "    func testM_SessionTitle() throws {\n",
+    def test_request_event_collision_requires_both_test_identities(self) -> None:
+        source = self.generated_event.read_text(encoding="utf-8")
+        self.generated_event.write_text(
+            source.replace(
+                "    func testE_SessionTitle() throws {\n"
+                '        try self.assertEventRoundTrip(type: "session.title")\n'
+                "    }\n",
+                "",
+            ),
             encoding="utf-8",
         )
         self.write_fixture('{"jsonrpc":"2.0","method":"ping"}')
@@ -137,34 +151,40 @@ class CheckConformanceTests(unittest.TestCase):
         result = self.run_checker()
 
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        self.assertIn("catalog entries : 2", result.stdout)
         self.assertIn("testE_SessionTitle", result.stdout)
 
-    def test_bare_event_method_generator_fails_real_envelope_contract(self) -> None:
-        self.catalog.write_text(
-            '{"requests":[],"events":[{"name":"session.title"}]}',
+    def test_bare_event_method_fails_real_envelope_contract(self) -> None:
+        source = self.generated_event.read_text(encoding="utf-8")
+        self.generated_event.write_text(
+            source.replace(
+                'JSONRPCEnvelope(method: "event", params: params)',
+                "JSONRPCEnvelope(method: type, params: params)",
+            ),
             encoding="utf-8",
         )
-        regenerated = subprocess.run(
-            [
-                sys.executable,
-                "-B",
-                str(self.repo / "scripts" / "gen_conformance_tests.py"),
-                "--output",
-                str(self.generated),
-            ],
-            capture_output=True,
-            text=True,
-            cwd=self.repo,
-        )
-        self.assertEqual(regenerated.returncode, 0, regenerated.stdout + regenerated.stderr)
         self.write_fixture('{"jsonrpc":"2.0","method":"ping"}')
 
         result = self.run_checker()
 
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn("real-event-envelope round-trip helper", result.stdout)
-        self.assertIn("do not call the real-envelope helper", result.stdout)
+
+    def test_event_helper_must_prove_id_is_absent(self) -> None:
+        source = self.generated_event.read_text(encoding="utf-8")
+        self.generated_event.write_text(
+            source.replace(
+                '        XCTAssertFalse(object.keys.contains("id"), '
+                '"event \\(type) encoded an id", file: file, line: line)\n',
+                "",
+            ),
+            encoding="utf-8",
+        )
+        self.write_fixture('{"jsonrpc":"2.0","method":"ping"}')
+
+        result = self.run_checker()
+
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("real-event-envelope round-trip helper", result.stdout)
 
     def test_helper_contracts_are_exact_and_assertions_are_load_bearing(self) -> None:
         self.assertIsNone(
@@ -182,14 +202,9 @@ class CheckConformanceTests(unittest.TestCase):
             )
         )
         for template, fragment in (
-            (
-                checker.REQUEST_HELPER_TEMPLATE,
-                "XCTAssertEqual(again, decoded,",
-            ),
-            (
-                checker.EVENT_HELPER_TEMPLATE,
-                "XCTAssertEqual(decoded.params, params,",
-            ),
+            (checker.REQUEST_HELPER_TEMPLATE, "XCTAssertEqual(again, decoded,"),
+            (checker.EVENT_HELPER_TEMPLATE, 'object.keys.contains("id")'),
+            (checker.EVENT_HELPER_TEMPLATE, "XCTAssertEqual(decoded.params, params,"),
         ):
             mutated = template.replace(fragment, "let removedAssertion =")
             with self.subTest(fragment=fragment):
@@ -198,10 +213,10 @@ class CheckConformanceTests(unittest.TestCase):
                 )
 
     def test_noop_request_test_body_fails_round_trip_contract(self) -> None:
-        source = self.generated.read_text(encoding="utf-8")
-        self.generated.write_text(
+        source = self.generated_request_test.read_text(encoding="utf-8")
+        self.generated_request_test.write_text(
             source.replace(
-                'try assertRoundTrip("method", name: "ping", id: .int(1))',
+                'try self.assertRoundTrip("method", name: "agents.list", id: .int(1))',
                 "XCTAssertTrue(true)",
             ),
             encoding="utf-8",
@@ -210,23 +225,50 @@ class CheckConformanceTests(unittest.TestCase):
 
         result = self.run_checker()
 
-        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertEqual(result.returncode, 1)
         self.assertIn("request tests do not call", result.stdout)
 
     def test_drift_fails_without_mutating_generated(self) -> None:
         self.write_fixture('{"jsonrpc":"2.0","method":"ping"}')
-        with self.generated.open("ab") as generated:
+        with self.generated_request.open("ab") as generated:
             generated.write(b"// injected drift\n")
-        before = self.generated.read_bytes()
+        before = self.generated_request.read_bytes()
 
         result = self.run_checker()
 
         self.assertEqual(result.returncode, 1)
-        self.assertIn("committed file is stale", result.stdout + result.stderr)
-        self.assertEqual(self.generated.read_bytes(), before)
+        self.assertIn("committed files are stale", result.stdout + result.stderr)
+        self.assertEqual(self.generated_request.read_bytes(), before)
+
+    def test_duplicate_catalog_entry_is_fail_not_blocked(self) -> None:
+        document = json.loads(self.valid_catalog_text)
+        document["requests"].append(document["requests"][-1])
+        self.catalog.write_text(json.dumps(document), encoding="utf-8")
+        self.write_fixture('{"jsonrpc":"2.0","method":"ping"}')
+        result = self.run_checker()
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("duplicate request/event entry", result.stdout)
+        self.assertEqual(result.stdout.splitlines()[-1], "G3: FAIL")
+
+    def test_provenance_drift_fails_with_generated_names_unchanged(self) -> None:
+        document = json.loads(self.valid_catalog_text)
+        document["source"]["commit"] = "0" * 40
+        self.catalog.write_text(
+            json.dumps(document, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        self.write_fixture('{"jsonrpc":"2.0","method":"ping"}')
+
+        result = self.run_checker()
+
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn(
+            "protocol catalog bytes do not match the pinned Hermes derivation",
+            result.stdout,
+        )
+        self.assertEqual(result.stdout.splitlines()[-1], "G3: FAIL")
 
     def test_missing_or_invalid_catalog_blocks(self) -> None:
-        catalog = self.catalog
         for replacement in (
             None,
             "not JSON",
@@ -235,11 +277,11 @@ class CheckConformanceTests(unittest.TestCase):
             '{"requests":[],"requests":[],"events":[]}',
             '{"requests":[{"name":"ping","value":NaN}],"events":[]}',
         ):
-            catalog.write_text(self.valid_catalog_text, encoding="utf-8")
+            self.catalog.write_text(self.valid_catalog_text, encoding="utf-8")
             if replacement is None:
-                catalog.unlink()
+                self.catalog.unlink()
             else:
-                catalog.write_text(replacement, encoding="utf-8")
+                self.catalog.write_text(replacement, encoding="utf-8")
             with self.subTest(replacement=replacement):
                 result = self.run_checker()
                 self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
@@ -258,20 +300,20 @@ class CheckConformanceTests(unittest.TestCase):
         self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
         self.assertIn("G3: BLOCKED", result.stderr)
 
-    def test_generator_failure_or_missing_candidate_blocks(self) -> None:
+    def test_generator_failure_or_missing_outputs_blocks(self) -> None:
         generator = self.repo / "scripts" / "gen_conformance_tests.py"
         cases = (
             "import sys\nsys.exit(7)\n",
-            "# succeeds without producing the requested output\n",
+            "# succeeds without producing the requested outputs\n",
         )
         for source in cases:
-            shutil.copy2(REPO / "scripts" / "gen_conformance_tests.py", generator)
             generator.write_text(source, encoding="utf-8")
             self.write_fixture('{"jsonrpc":"2.0","method":"ping"}')
             with self.subTest(source=source):
                 result = self.run_checker()
                 self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
                 self.assertEqual(result.stderr.splitlines()[-1], "G3: BLOCKED")
+            shutil.copy2(GENERATOR, generator)
 
     def test_gauntlet_preserves_fail_vs_blocked_statuses(self) -> None:
         script = GAUNTLET.read_text(encoding="utf-8")
@@ -282,6 +324,143 @@ class CheckConformanceTests(unittest.TestCase):
         self.assertIn('"1|G3: FAIL") record G3 FAIL', g3)
         self.assertIn('"2|G3: BLOCKED") record G3 BLOCKED', g3)
         self.assertIn("*) record G3 BLOCKED", g3)
+
+
+class ConformanceGeneratorTests(unittest.TestCase):
+    def run_generator(
+        self, catalog: pathlib.Path, output: pathlib.Path
+    ) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [
+                sys.executable,
+                "-B",
+                str(GENERATOR),
+                "--catalog",
+                str(catalog),
+                "--output-directory",
+                str(output),
+            ],
+            capture_output=True,
+            text=True,
+            cwd=REPO,
+        )
+
+    def test_full_catalog_ratchets_224_kind_aware_tests(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="talaria-gen-full-") as temporary:
+            output = pathlib.Path(temporary)
+            result = self.run_generator(REPO / "protocol" / "methods.json", output)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            request_source = "\n".join(
+                (output / filename).read_text(encoding="utf-8")
+                for filename in OUTPUT_NAMES[1:-1]
+            )
+            event_source = (output / OUTPUT_NAMES[-1]).read_text(encoding="utf-8")
+            request_count = request_source.count("    func testM_")
+            event_count = event_source.count("    func testE_")
+            self.assertEqual((request_count, event_count), (168, 56))
+            self.assertEqual(request_count + event_count, 224)
+            for stem in ("SessionTitle", "SessionUsage"):
+                self.assertIn(f"testM_{stem}", request_source)
+                self.assertIn(f"testE_{stem}", event_source)
+            self.assertNotIn('assertRoundTrip("event"', event_source)
+            self.assertEqual(event_source.count("try self.assertEventRoundTrip("), 56)
+
+    def test_two_directories_and_reordered_catalog_are_byte_identical(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="talaria-gen-determinism-") as temporary:
+            root = pathlib.Path(temporary)
+            original = json.loads(
+                (REPO / "protocol" / "methods.json").read_text(encoding="utf-8")
+            )
+            original["requests"].reverse()
+            original["events"].reverse()
+            reordered = root / "reordered.json"
+            reordered.write_bytes(
+                (json.dumps(original, ensure_ascii=False) + "\n").encode("utf-8")
+            )
+            outputs = [root / name for name in ("one", "two", "reordered")]
+            for catalog, output in (
+                (REPO / "protocol" / "methods.json", outputs[0]),
+                (REPO / "protocol" / "methods.json", outputs[1]),
+                (reordered, outputs[2]),
+            ):
+                result = self.run_generator(catalog, output)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            for filename in OUTPUT_NAMES:
+                values = [(output / filename).read_bytes() for output in outputs]
+                self.assertEqual(values[0], values[1])
+                self.assertEqual(values[0], values[2])
+                self.assertNotIn(b"\r", values[0])
+                self.assertFalse(values[0].startswith(b"\xef\xbb\xbf"))
+            self.assertIn(
+                "→".encode("utf-8"),
+                (outputs[0] / OUTPUT_NAMES[0]).read_bytes(),
+            )
+
+    def test_duplicate_and_normalized_identity_collision_fail_without_output(self) -> None:
+        cases = (
+            {
+                "requests": [{"name": "ping"}, {"name": "ping"}],
+                "events": [{"name": "event.ok"}],
+            },
+            {
+                "requests": [{"name": "foo.bar"}, {"name": "foo.Bar"}],
+                "events": [{"name": "event.ok"}],
+            },
+        )
+        with tempfile.TemporaryDirectory(prefix="talaria-gen-invalid-") as temporary:
+            root = pathlib.Path(temporary)
+            for index, document in enumerate(cases):
+                catalog = root / f"catalog-{index}.json"
+                output = root / f"output-{index}"
+                catalog.write_text(json.dumps(document), encoding="utf-8")
+                output.mkdir()
+                seeded = {
+                    filename: b"seeded output\n" for filename in OUTPUT_NAMES
+                }
+                for filename, content in seeded.items():
+                    (output / filename).write_bytes(content)
+                with self.subTest(document=document):
+                    result = self.run_generator(catalog, output)
+                    self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                    self.assertEqual(
+                        {
+                            filename: (output / filename).read_bytes()
+                            for filename in OUTPUT_NAMES
+                        },
+                        seeded,
+                    )
+
+    def test_missing_catalog_is_blocked_without_output(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="talaria-gen-missing-") as temporary:
+            root = pathlib.Path(temporary)
+            output = root / "output"
+            result = self.run_generator(root / "missing.json", output)
+            self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+            self.assertFalse(output.exists())
+
+    def test_invalid_utf8_catalog_is_blocked_without_overwrite(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="talaria-gen-utf8-") as temporary:
+            root = pathlib.Path(temporary)
+            catalog = root / "invalid.json"
+            catalog.write_bytes(b'{"requests":[]}' + bytes([0xFF]))
+            output = root / "output"
+            output.mkdir()
+            before = {}
+            for filename in OUTPUT_NAMES:
+                content = f"seed {filename}\n".encode("utf-8")
+                (output / filename).write_bytes(content)
+                before[filename] = content
+
+            result = self.run_generator(catalog, output)
+
+            self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+            self.assertEqual(
+                {
+                    filename: (output / filename).read_bytes()
+                    for filename in OUTPUT_NAMES
+                },
+                before,
+            )
 
 
 if __name__ == "__main__":

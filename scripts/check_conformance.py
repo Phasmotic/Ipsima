@@ -7,15 +7,17 @@ Three checks, all derived from committed artifacts:
    Packages/HermesKit/Tests/HermesKitTests/Fixtures/*.jsonl decodes as
    JSON-RPC and is byte-identical to its canonical re-encode (sorted keys,
    compact separators) — the same canonical form WireCodec.swift produces.
-2. Generated-test coverage: the committed ProtocolConformanceTests.swift
-   (scripts/gen_conformance_tests.py) mentions EVERY method and event name in
-   protocol/methods.json.
-3. Regeneration determinism: re-running the generator produces no diff.
+2. Generated-test coverage: the six committed generated Swift files mention
+   EVERY request and event identity in protocol/methods.json and bind each to
+   its reviewed request or real-event-envelope helper.
+3. Regeneration determinism: two isolated generations are byte-identical and
+   match both committed outputs.
 
 Exit 0 only if all three hold.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import pathlib
 import re
@@ -24,18 +26,31 @@ import sys
 import tempfile
 from typing import Any
 
+try:
+    from scripts import derive_protocol as derivation
+except ModuleNotFoundError:  # direct execution from a copied scripts directory
+    import derive_protocol as derivation  # type: ignore[no-redef]
+
 REPO = pathlib.Path(__file__).resolve().parent.parent
 CATALOG = REPO / "protocol" / "methods.json"
 FIXTURE_DIR = REPO / "Packages" / "HermesKit" / "Tests" / "HermesKitTests" / "Fixtures"
-GENERATED = REPO / "Packages" / "HermesKit" / "Tests" / "HermesKitTests" / "ProtocolConformanceTests.swift"
+GENERATED_DIR = REPO / "Packages" / "HermesKit" / "Tests" / "HermesKitTests"
+GENERATED_FILES = (
+    "ProtocolConformanceTests.swift",
+    "ProtocolRequestConformanceTests1.swift",
+    "ProtocolRequestConformanceTests2.swift",
+    "ProtocolRequestConformanceTests3.swift",
+    "ProtocolRequestConformanceTests4.swift",
+    "ProtocolEventConformanceTests.swift",
+)
 GEN_SCRIPT = REPO / "scripts" / "gen_conformance_tests.py"
 CATALOG_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*\Z")
 GENERATED_TEST_BLOCK = re.compile(
     r"^    func (?P<identity>test[ME]_[A-Za-z0-9_]+)\(\) throws \{\n"
-    r"(?P<body>.*?)^    \}$",
-    re.MULTILINE | re.DOTALL,
+    r"        (?P<body>[^\n]+)\n    \}$",
+    re.MULTILINE,
 )
-REQUEST_HELPER_TEMPLATE = '''    private func assertRoundTrip(
+REQUEST_HELPER_TEMPLATE = '''    func assertRoundTrip(
         _ kind: String, name: String, id: JSONRPCID?, file: StaticString = #filePath, line: UInt = #line
     ) throws {
         var envelope = JSONRPCEnvelope(method: name)
@@ -46,24 +61,28 @@ REQUEST_HELPER_TEMPLATE = '''    private func assertRoundTrip(
         XCTAssertEqual(decoded, envelope, "\\(kind) \\(name) changed on decode", file: file, line: line)
         XCTAssertEqual(decoded.method, name, "\\(kind) \\(name) lost its name", file: file, line: line)
         XCTAssertEqual(decoded.params?["__probe"], .string(name), file: file, line: line)
-        let again = try codec.decode(try codec.encode(decoded))
+        let again = try codec.decode(self.codec.encode(decoded))
         XCTAssertEqual(again, decoded, "\\(kind) \\(name) not a fixed point", file: file, line: line)
     }'''
 EVENT_HELPER_TEMPLATE = '''    private func assertEventRoundTrip(
         type: String, file: StaticString = #filePath, line: UInt = #line
     ) throws {
+        let codec = WireCodec()
         let payload: JSONValue = .object(["__probe": .string(type)])
         let params: JSONValue = .object([
             "payload": payload,
             "type": .string(type),
         ])
         let envelope = JSONRPCEnvelope(method: "event", params: params)
-        let decoded = try codec.decode(try codec.encode(envelope))
+        let data = try codec.encode(envelope)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertFalse(object.keys.contains("id"), "event \\(type) encoded an id", file: file, line: line)
+        let decoded = try codec.decode(data)
         XCTAssertEqual(decoded, envelope, "event \\(type) changed on decode", file: file, line: line)
         XCTAssertEqual(decoded.method, "event", file: file, line: line)
         XCTAssertNil(decoded.id, file: file, line: line)
         XCTAssertEqual(decoded.params, params, file: file, line: line)
-        let again = try codec.decode(try codec.encode(decoded))
+        let again = try codec.decode(codec.encode(decoded))
         XCTAssertEqual(again, decoded, "event \\(type) not a fixed point", file: file, line: line)
     }'''
 
@@ -170,7 +189,8 @@ def run_checks() -> int:
     if not GEN_SCRIPT.is_file():
         raise ConformanceBlocked("conformance generator is missing")
     try:
-        catalog = strict_json_loads(CATALOG.read_text(encoding="utf-8"))
+        catalog_raw = CATALOG.read_bytes()
+        catalog = strict_json_loads(catalog_raw.decode("utf-8", errors="strict"))
     except (
         json.JSONDecodeError,
         DuplicateJSONKeyError,
@@ -179,6 +199,10 @@ def run_checks() -> int:
         raise ConformanceBlocked("protocol catalog is invalid JSON") from error
     if not isinstance(catalog, dict):
         raise ConformanceBlocked("protocol catalog root is not an object")
+    if hashlib.sha256(catalog_raw).hexdigest() != derivation.PINNED_CATALOG_SHA256:
+        failures.append(
+            "protocol catalog bytes do not match the pinned Hermes derivation"
+        )
     requests = catalog.get("requests")
     events = catalog.get("events")
     if not isinstance(requests, list) or not isinstance(events, list):
@@ -198,7 +222,11 @@ def run_checks() -> int:
     if any(CATALOG_NAME.fullmatch(name) is None for _, name in catalog_entries):
         raise ConformanceBlocked("protocol catalog contains an unsupported name")
     if len(catalog_entries) != len(set(catalog_entries)):
-        raise ConformanceBlocked("protocol catalog contains a duplicate entry")
+        failures.append("protocol catalog contains a duplicate request/event entry")
+    if not requests:
+        failures.append("protocol catalog request namespace is empty")
+    if not events:
+        failures.append("protocol catalog event namespace is empty")
     if not catalog_entries:
         print("catalog is EMPTY — protocol derivation not done; refusing hollow pass")
         print("\nG3: FAIL")
@@ -235,7 +263,15 @@ def run_checks() -> int:
         )
 
     # --- 2. generated-test coverage -----------------------------------------
-    gen_text = GENERATED.read_text(encoding="utf-8") if GENERATED.exists() else ""
+    generated_texts: dict[str, str] = {}
+    for filename in GENERATED_FILES:
+        path = GENERATED_DIR / filename
+        generated_texts[filename] = (
+            path.read_text(encoding="utf-8") if path.is_file() else ""
+        )
+    request_text = generated_texts[GENERATED_FILES[0]]
+    event_text = generated_texts[GENERATED_FILES[-1]]
+    gen_text = "\n".join(generated_texts.values())
     expected_tests: dict[str, tuple[str, str]] = {}
     for kind, name in catalog_entries:
         tag = "M" if kind == "method" else "E"
@@ -278,7 +314,7 @@ def run_checks() -> int:
         failures.append(f"generated conformance test is duplicated: {identity}")
 
     request_helper_problem = helper_contract_problem(
-        gen_text, REQUEST_HELPER_TEMPLATE, "request round-trip"
+        request_text, REQUEST_HELPER_TEMPLATE, "request round-trip"
     )
     if request_helper_problem is not None:
         failures.append(request_helper_problem)
@@ -287,7 +323,9 @@ def run_checks() -> int:
         if kind != "method":
             continue
         bodies = actual_test_bodies.get(identity, [])
-        required_body = f'try assertRoundTrip("method", name: "{name}", id: .int(1))'
+        required_body = (
+            f'try self.assertRoundTrip("method", name: "{name}", id: .int(1))'
+        )
         if len(bodies) == 1 and bodies[0].strip() != required_body:
             wrong_request_tests.append(identity)
     if wrong_request_tests:
@@ -310,14 +348,14 @@ def run_checks() -> int:
     }
     if expected_events:
         helper_problem = helper_contract_problem(
-            gen_text, EVENT_HELPER_TEMPLATE, "real-event-envelope round-trip"
+            event_text, EVENT_HELPER_TEMPLATE, "real-event-envelope round-trip"
         )
         if helper_problem is not None:
             failures.append(helper_problem)
         wrong_event_tests = []
         for identity, name in expected_events.items():
             bodies = actual_test_bodies.get(identity, [])
-            required_call = f'try assertEventRoundTrip(type: "{name}")'
+            required_call = f'try self.assertEventRoundTrip(type: "{name}")'
             if len(bodies) == 1 and bodies[0].strip() != required_call:
                 wrong_event_tests.append(identity)
         if wrong_event_tests:
@@ -334,30 +372,68 @@ def run_checks() -> int:
             )
 
     # --- 3. generator determinism -------------------------------------------
-    committed = GENERATED.read_bytes() if GENERATED.exists() else b""
+    committed = {
+        filename: (GENERATED_DIR / filename).read_bytes()
+        if (GENERATED_DIR / filename).is_file()
+        else b""
+        for filename in GENERATED_FILES
+    }
     with tempfile.TemporaryDirectory(prefix="talaria-g3-") as temp_dir:
-        candidate = pathlib.Path(temp_dir) / GENERATED.name
-        proc = subprocess.run(
-            [sys.executable, str(GEN_SCRIPT), "--output", str(candidate)],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        if proc.returncode != 0:
-            raise ConformanceBlocked(
-                f"generator exited with status {proc.returncode}"
+        candidates: list[dict[str, bytes]] = []
+        generation_failed = False
+        for generation in ("first", "second"):
+            output_directory = pathlib.Path(temp_dir) / generation
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(GEN_SCRIPT),
+                    "--catalog",
+                    str(CATALOG),
+                    "--output-directory",
+                    str(output_directory),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=30,
             )
-        if not candidate.is_file():
-            raise ConformanceBlocked(
-                "generator succeeded without writing candidate output"
-            )
-        if candidate.read_bytes() != committed:
-            failures.append(
-                "regenerating ProtocolConformanceTests.swift produced a diff "
-                "(committed file is stale)"
-            )
+            if proc.returncode == 1:
+                failures.append("generator rejected the readable catalog contract")
+                generation_failed = True
+                break
+            if proc.returncode != 0:
+                raise ConformanceBlocked(
+                    f"generator exited with status {proc.returncode}"
+                )
+            if not proc.stdout.strip() or proc.stderr:
+                raise ConformanceBlocked(
+                    "generator success evidence was empty or emitted stderr"
+                )
+            inventory = sorted(
+                path.name for path in output_directory.iterdir() if path.is_file()
+            ) if output_directory.is_dir() else []
+            if inventory != sorted(GENERATED_FILES):
+                raise ConformanceBlocked(
+                    "generator succeeded without the exact output inventory"
+                )
+            output_bytes = {
+                filename: (output_directory / filename).read_bytes()
+                for filename in GENERATED_FILES
+            }
+            if any(not content for content in output_bytes.values()):
+                raise ConformanceBlocked("generator wrote an empty output")
+            candidates.append(output_bytes)
+        if not generation_failed:
+            if candidates[0] != candidates[1]:
+                failures.append("two isolated generator runs produced different bytes")
+            if candidates[0] != committed:
+                failures.append(
+                    "regenerating conformance Swift sources produced a diff "
+                    "(committed files are stale)"
+                )
 
-    print(f"catalog entries : {len(catalog_entries)}")
+    print(f"catalog requests: {len(requests)}")
+    print(f"catalog events  : {len(events)}")
+    print(f"generated tests : {len(actual_identities)}")
     print(f"golden frames   : {total_frames}")
     print(f"uncovered       : {len(missing_tests)}")
     if failures:
