@@ -106,6 +106,14 @@ PUBLIC_HTTPS_ALLOWANCES = {
             )
         }
     ),
+    "scripts/install_swiftlint_macos.sh": frozenset(
+        {
+            _secure_url(
+                "github.com/realm/SwiftLint/releases/download/"
+                "${SWIFTLINT_VERSION}/SwiftLintBinary.artifactbundle.zip"
+            )
+        }
+    ),
     "scripts/gauntlet_status.sh": frozenset(
         {
             _secure_url("github.com/$expected_repository"),

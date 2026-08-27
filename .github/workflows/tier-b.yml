@@ -45,6 +45,7 @@ jobs:
             scripts.test_check_xcode_log \
             scripts.test_check_xcresult_tests \
             scripts.test_ensure_simulator_booted \
+            scripts.test_install_swiftlint_macos \
             scripts.test_g12_contract
 
       - name: Install pinned XcodeGen
@@ -276,8 +277,14 @@ jobs:
           printf '%s\n' "$status" | tee .gauntlet/g11-status.txt
           printf '### %s\n' "$status" >> "$GITHUB_STEP_SUMMARY"
 
-      # G4 runs last during audit repair so its known Objective C red remains
-      # decisive without hiding G6-G12 diagnostic evidence earlier in this job.
+      - name: Install digest-pinned SwiftLint for authoritative G4
+        run: |
+          set -euo pipefail
+          bash scripts/install_swiftlint_macos.sh 2>&1 \
+            | tee .gauntlet/g4-swiftlint-install.log
+
+      # G4 runs last during audit repair so a real lint red remains decisive
+      # without hiding G6-G12 diagnostic evidence earlier in this job.
       - name: Verify formatter parity and lint (G4, authoritative)
         run: |
           set -euo pipefail
