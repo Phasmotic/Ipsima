@@ -26,6 +26,7 @@ jobs:
       - name: Pin and verify Apple toolchain
         run: |
           set -euo pipefail
+          python3 -B -m unittest scripts.test_verify_apple_toolchain
           sudo xcode-select -s "$XCODE_PATH"
           bash scripts/verify_apple_toolchain.sh 2>&1 | tee .gauntlet/apple-toolchain.log
 
@@ -184,6 +185,7 @@ jobs:
       - name: Pin and verify Apple toolchain
         run: |
           set -euo pipefail
+          python3 -B -m unittest scripts.test_verify_apple_toolchain
           sudo xcode-select -s "$XCODE_PATH"
           bash scripts/verify_apple_toolchain.sh 2>&1 | tee .gauntlet/apple-toolchain.log
 
@@ -280,6 +282,7 @@ jobs:
       - name: Pin and verify Apple toolchain
         run: |
           set -euo pipefail
+          python3 -B -m unittest scripts.test_verify_apple_toolchain
           sudo xcode-select -s "$XCODE_PATH"
           bash scripts/verify_apple_toolchain.sh 2>&1 | tee .gauntlet/apple-toolchain.log
 

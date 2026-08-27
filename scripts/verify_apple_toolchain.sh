@@ -5,6 +5,7 @@ set -euo pipefail
 EXPECTED_XCODE_VERSION="Xcode 26.6"
 EXPECTED_XCODE_BUILD="Build version 17F113"
 EXPECTED_SWIFT_VERSION="6.3.3"
+EXPECTED_SWIFT_REGEX="6[.]3[.]3"
 
 xcode_output="$(xcodebuild -version 2>&1)"
 xcode_version="$(printf '%s\n' "$xcode_output" | sed -n '1p')"
@@ -20,7 +21,7 @@ fi
 swift_output="$(xcrun swift --version 2>&1)"
 swift_version_line="$(printf '%s\n' "$swift_output" | sed -n '1p')"
 if ! printf '%s\n' "$swift_version_line" \
-    | grep -Eq "^(Apple )?Swift version ${EXPECTED_SWIFT_VERSION}([ (]|$)"; then
+    | grep -Eq "(^|[[:space:]])(Apple )?Swift version ${EXPECTED_SWIFT_REGEX}([ (]|$)"; then
     printf 'ERROR: expected Swift %s; found %s\n' \
         "$EXPECTED_SWIFT_VERSION" "${swift_version_line:-unknown}" >&2
     exit 2
