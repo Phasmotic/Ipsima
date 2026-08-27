@@ -8,9 +8,42 @@ import tempfile
 import textwrap
 import unittest
 
+import yaml
+
 
 REPO = Path(__file__).resolve().parent.parent
 CHECKER = REPO / "scripts" / "check_xcodegen_determinism.py"
+
+
+class ProjectBundleVersionTests(unittest.TestCase):
+    def test_parent_apps_and_extensions_share_project_versions(self) -> None:
+        project = yaml.safe_load((REPO / "project.yml").read_text(encoding="utf-8"))
+        base = project["settings"]["base"]
+        self.assertEqual(base["CURRENT_PROJECT_VERSION"], "1")
+        self.assertEqual(base["MARKETING_VERSION"], "1.0")
+
+        for target_name in (
+            "Talaria",
+            "TalariaWidgets",
+            "TalariaWatch",
+            "TalariaWatchWidgets",
+        ):
+            target_base = project["targets"][target_name].get("settings", {}).get(
+                "base", {}
+            )
+            with self.subTest(target=target_name):
+                self.assertNotIn("CURRENT_PROJECT_VERSION", target_base)
+                self.assertNotIn("MARKETING_VERSION", target_base)
+
+        for target_name in ("TalariaWidgets", "TalariaWatchWidgets"):
+            properties = project["targets"][target_name]["info"]["properties"]
+            with self.subTest(widget=target_name):
+                self.assertEqual(
+                    properties["CFBundleVersion"], "$(CURRENT_PROJECT_VERSION)"
+                )
+                self.assertEqual(
+                    properties["CFBundleShortVersionString"], "$(MARKETING_VERSION)"
+                )
 
 
 @unittest.skipIf(os.name == "nt", "executable-script probes run in Tier A and Tier B")
