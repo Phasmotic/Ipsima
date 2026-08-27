@@ -14,6 +14,7 @@ settings:
     CODE_SIGN_STYLE: Automatic
     GENERATE_INFOPLIST_FILE: YES
     # P0/P1 contain no App Intents. Remove this in P4 when that feature lands.
+    ENABLE_APPINTENTS_METADATA: NO
     ENABLE_APP_INTENTS_METADATA_GENERATION: NO
     # Tier B builds are simulator/archive-only until P6 (hard-gated).
     CODE_SIGNING_ALLOWED: NO
