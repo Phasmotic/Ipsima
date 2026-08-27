@@ -273,9 +273,9 @@ jobs:
             *) g12_blocked "checker returned an unsupported status" ;;
           esac
 
-      - name: G11 — N/A (no UI surface yet)
+      - name: G11 — N/A (no real streaming chat surface to capture)
         run: |
-          status="G11 — N/A (no UI surface yet; arms in P2)"
+          status="G11 — N/A (no real streaming chat surface to capture; arms with G14 and G12 streaming on the first real streaming chat surface in P2; ScreenshotMatrixUITests.swift must be rebuilt)"
           printf '%s\n' "$status" | tee .gauntlet/g11-status.txt
           printf '### %s\n' "$status" >> "$GITHUB_STEP_SUMMARY"
 
@@ -307,14 +307,14 @@ jobs:
           "$SWIFTLINT_EXPECTED" --strict --quiet 2>&1 \
             | tee .gauntlet/g4-swiftlint.log
 
-      # The brief arms all of G12 and does not grant the streaming clause the
-      # G11/G14 pre-P2 N/A state. Keep the overall gate visibly blocked until
-      # the orchestrator decides phase applicability or a harness exists.
-      - name: G12 streaming responsiveness — BLOCKED pending phase decision
-        if: ${{ always() }}
+      # The orchestrator ruled that the streaming clause has no subject before
+      # P2: no live stream or UI consumes one. This is N/A, never PASS, and it
+      # arms with G11/G14 on the first real streaming chat surface.
+      - name: G12 streaming responsiveness — N/A (no streaming surface until P2)
         run: |
-          echo "G12 BLOCKED — streaming responsiveness is not certified" >&2
-          exit 2
+          status="G12 streaming responsiveness — N/A (no streaming surface until P2; arms with G11 and G14 on the first real streaming chat surface)"
+          printf '%s\n' "$status" | tee .gauntlet/g12-streaming-status.txt
+          printf '### %s\n' "$status" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Emit Tier B job status
         if: ${{ always() }}

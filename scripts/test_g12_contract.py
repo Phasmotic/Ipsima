@@ -7,6 +7,8 @@ LAUNCH_TEST = REPO / "Tests" / "TalariaUITests" / "LaunchPerformanceUITests.swif
 CONTENT_VIEW = REPO / "App" / "Talaria" / "ContentView.swift"
 WORKFLOW = REPO / ".github" / "workflows" / "tier-b.yml"
 CHECKER = REPO / "scripts" / "check_launch_metrics.py"
+BRIEF = REPO / "docs" / "BRIEF.md"
+GOVERNANCE = REPO / "docs" / "GOVERNANCE.md"
 
 
 class G12ContractTests(unittest.TestCase):
@@ -68,7 +70,9 @@ class G12ContractTests(unittest.TestCase):
     def test_workflow_checks_exact_pinned_structured_metric(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         g12 = workflow.index("Verify G12 cold-launch budget")
-        g11 = workflow.index("G11 — N/A (no UI surface yet)", g12)
+        g11 = workflow.index(
+            "G11 — N/A (no real streaming chat surface to capture)", g12
+        )
         section = workflow[g12:g11]
 
         self.assertLess(g12, g11)
@@ -111,19 +115,75 @@ class G12ContractTests(unittest.TestCase):
 
         self.assertIn("scripts.test_check_launch_metrics", workflow)
 
-    def test_overall_g12_cannot_green_without_streaming_authority(self) -> None:
+    def test_streaming_clause_records_orchestrator_n_a_without_claiming_pass(
+        self,
+    ) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
+        ios = workflow[
+            workflow.index("  ios:") : workflow.index("  watchos:")
+        ]
         g4 = workflow.index("Verify formatter parity and lint (G4, authoritative)")
-        blocked = workflow.index(
-            "G12 streaming responsiveness — BLOCKED pending phase decision"
+        step_header = (
+            "      - name: G12 streaming responsiveness — N/A "
+            "(no streaming surface until P2)"
         )
-        watchos = workflow.index("  watchos:", blocked)
-        section = workflow[blocked:watchos]
+        reporter_header = "      - name: Emit Tier B job status"
+        self.assertEqual(ios.count("      - name: G12 streaming responsiveness"), 1)
+        not_applicable = workflow.index(step_header)
+        reporter = workflow.index(reporter_header, not_applicable)
+        section = workflow[not_applicable:reporter]
+        expected_section = (
+            f"{step_header}\n"
+            "        run: |\n"
+            '          status="G12 streaming responsiveness — N/A '
+            "(no streaming surface until P2; arms with G11 and G14 on the first "
+            'real streaming chat surface)"\n'
+            "          printf '%s\\n' \"$status\" | tee "
+            ".gauntlet/g12-streaming-status.txt\n"
+            "          printf '### %s\\n' \"$status\" >> "
+            '"$GITHUB_STEP_SUMMARY"\n'
+            "\n"
+        )
 
-        self.assertGreater(blocked, g4)
-        self.assertIn("if: ${{ always() }}", section)
-        self.assertIn("G12 BLOCKED — streaming responsiveness is not certified", section)
-        self.assertIn("exit 2", section)
+        self.assertGreater(not_applicable, g4)
+        self.assertEqual(section, expected_section)
+        self.assertNotIn("PASS", section)
+        self.assertNotIn("BLOCKED", section)
+        self.assertNotIn("exit ", section)
+        self.assertNotIn("synthetic", ios.lower())
+        self.assertNotIn("benchmark", ios.lower())
+
+        watchos = workflow.index("  watchos:", reporter)
+        self.assertEqual(workflow[reporter:watchos].count("      - name:"), 1)
+
+    def test_phase_contract_rearms_dormant_gates_and_rebuilds_g11(self) -> None:
+        brief = BRIEF.read_text(encoding="utf-8")
+        governance = GOVERNANCE.read_text(encoding="utf-8")
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+
+        for source in (brief, governance):
+            self.assertIn("G12 streaming", source)
+            self.assertIn("G11", source)
+            self.assertIn("G14", source)
+            self.assertIn("first real streaming chat surface", source)
+            self.assertIn("ScreenshotMatrixUITests.swift", source)
+            self.assertIn("rebuild", source.lower())
+            self.assertIn("P2 is not complete", source)
+            self.assertIn(
+                "N/A (no real streaming chat surface to capture)", source
+            )
+            self.assertIn(
+                "N/A (no G11 images to review before that arm point)", source
+            )
+
+        self.assertIn(
+            "enumerate every N/A gate by name and reason",
+            " ".join(governance.split()),
+        )
+        self.assertIn(
+            "G11 — N/A (no real streaming chat surface to capture", workflow
+        )
+        self.assertIn("ScreenshotMatrixUITests.swift must be rebuilt", workflow)
 
     def test_checker_pins_schema_version_and_strict_budget(self) -> None:
         source = CHECKER.read_text(encoding="utf-8")

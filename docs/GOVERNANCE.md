@@ -17,10 +17,22 @@ checkpoint as passing.
 `GAUNTLET GREEN` has a stricter and absolute meaning: every required, armed gate is genuinely
 green. It may not be emitted when any armed gate is failing, blocked, deferred, skipped, relaxed,
 quarantined, or allowed to continue after failure. There are no exceptions to the green sentinel.
+An explicit owner/orchestrator applicability ruling of N/A is compatible with green because that
+gate is not armed; it is never represented as passing. Every green sentinel report must enumerate
+every N/A gate by name and reason so a reader cannot mistake applicability for successful
+execution.
 
-Phase activation is not a deferral. The binding brief explicitly leaves G11 and G14 unarmed
-through P1 because no product UI surface exists. They are recorded as `N/A (no UI surface yet)`,
-never as passing, and they arm in P2. Once a gate is armed, ordinary work cannot return it to N/A.
+Phase activation is not a deferral. G11 is `N/A (no real streaming chat surface to capture)`;
+G14 is `N/A (no G11 images to review before that arm point)`; and, by explicit orchestrator
+ruling, G12 streaming is `N/A (no streaming surface until P2)`. None is passing, waived, deferred,
+or skipped. All three arm on the first real streaming chat surface in P2, and ordinary work cannot
+return an armed gate to N/A. P2 is not complete until all three are armed and genuinely green.
+
+`Tests/TalariaUITests/ScreenshotMatrixUITests.swift` was removed with the pre-product scaffold.
+Rebuilding that test and its light/dark, device-size, and Dynamic Type artifact matrix is an
+explicit prerequisite at the P2 arm point; G11 cannot be merely re-enabled because no dormant
+test remains. A synthetic streaming harness is prohibited before P2: measuring codec work without
+a real streaming UI would not test G12's main-thread responsiveness contract.
 
 ## Capture and publication safety
 

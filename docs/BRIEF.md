@@ -4,8 +4,8 @@
 
 Talaria is maintained in the public `markschonfeld/Talaria` repository. Preserve that exact
 capitalization in remotes, workflows, and documentation. The public audit ledger is issue #2;
-pull request #1 is the review surface for the Phase 0 handoff and remains draft until the audit
-repair phase closes.
+pull request #1 is the review surface for the Phase 0 handoff and remains draft through audit
+repair closure and the remaining Phase 0 work.
 
 This file is the in-repository operating brief. Explicit owner or orchestrator decisions may
 revise it. Expensive-to-reconstruct findings and evidence belong in the repository, pull request,
@@ -129,13 +129,15 @@ against a tracked generated project.
 | G12 | Cold launch and live-stream responsiveness stay within the declared budgets. |
 | G13 | An unsigned archive succeeds and proves the iOS widget, embedded watch app, and watch widget are present. |
 
-At the current audit-repair checkpoint, G12 is not green. Its cold-launch clause remains armed;
-the latest authoritative measurement was 3.062 seconds against the strict `<3.0s` budget and is
-eligible for the single permitted retry after Objective E. Its streaming-responsiveness clause
-has no certifying harness because the first live-stream surface is scheduled for P2. Unlike G11
-and G14, the original brief did not declare that clause N/A before P2. It therefore remains
-`BLOCKED` unless the owner/orchestrator explicitly revises phase applicability or authorizes a
-real earlier harness. A cold-launch pass alone cannot make overall G12 green.
+G12 cold launch is armed during audit repair. Its first closure measurement was 3.062 seconds
+against the strict `<3.0s` budget; the single permitted retry passed at 2.863 seconds over five
+samples. The threshold and measurement contract remain unchanged.
+
+By explicit orchestrator ruling, **G12 streaming is `N/A (no streaming surface until P2)`**.
+Before P2 there is no live stream and no UI consuming one, so the clause has no subject. N/A is
+not PASS, a waiver, a deferral, or permission to build a synthetic codec benchmark and describe
+it as UI responsiveness. G12 streaming arms with G11 and G14 on the first real streaming chat
+surface in P2. P2 is not complete until all three gates are armed and genuinely green.
 
 ### Tier C — judgement
 
@@ -144,9 +146,14 @@ real earlier harness. A cold-launch pass alone cannot make overall G12 green.
 | G14 | Every G11 image receives a written visual-quality verdict. |
 | G15 | The owner accepts the visual result. |
 
-G11 and G14 are `N/A (no UI surface yet)` through P1; they arm with the first product screen in
-P2. That phase activation is not a deferral, and an armed gate cannot later be called N/A to close
-a phase.
+G11 is `N/A (no real streaming chat surface to capture)`, and G14 is
+`N/A (no G11 images to review before that arm point)`. Together with G12 streaming, both arm on
+the first real streaming chat surface in P2. The earlier scaffold removed
+`Tests/TalariaUITests/ScreenshotMatrixUITests.swift`; rebuilding that test and its required
+light/dark, device-size, and Dynamic Type matrix is an explicit P2 prerequisite, not a matter of
+merely re-enabling a dormant test. P2 is not complete until G11, G14, and G12 streaming are all
+armed and green. Phase activation is not a deferral, and an armed gate cannot later be called N/A
+to close a phase.
 
 ## The convergence loop
 
@@ -160,7 +167,9 @@ Every repair or phase objective uses one loop pass. A phase has a hard maximum o
    checkpoint is allowed only under the named-failure rule in `docs/GOVERNANCE.md`.
 6. Dispatch and follow Tier B.
 7. If red, inspect the bound failing evidence, fix, and return to step 3.
-8. From P2 onward, obtain the G11 screenshot artifact.
+8. At the first real streaming chat surface in P2, rebuild
+   `Tests/TalariaUITests/ScreenshotMatrixUITests.swift`, arm G11/G14/G12-streaming, and obtain the
+   G11 screenshot artifact.
 9. Inspect every image and record the G14 verdict.
 10. If visual review fails, repair the UI and return to step 3.
 11. If every armed gate passes, update the pull request evidence table and stop.
@@ -172,7 +181,9 @@ then reverted.
 A checkpoint commit may preserve a named, honestly failing gate while repair progresses. It does
 not certify green. A `GAUNTLET GREEN` sentinel is stricter: every required, armed gate must be
 genuinely green, with nothing skipped, relaxed, deferred, quarantined, or allowed to continue on
-error.
+error. An explicit orchestrator ruling of N/A is compatible with green because the gate is not
+armed; the sentinel report must still list every N/A gate by name and reason so N/A cannot be
+misread as PASS.
 
 ## Stop conditions and hard rules
 
@@ -207,9 +218,12 @@ work in this order; do not combine these steps with audit repair:
    exact reasons, preserve the evidence links, then revert the deliberate defects. Red is the
    passing result of this inverted proof; it is not permission to weaken a gate.
 2. Regenerate `.gauntlet/` from scratch and run a clean full Tier A followed by Tier B.
-3. Update draft pull request #1 with an evidence table for every gate. Mark G11 and G14
-   `N/A (no UI surface yet)` rather than PASS, and retain the sanitized historical disclosures
-   about the first-session profile-scoping discrepancy and the earlier orphaned-backend reap.
+3. Update draft pull request #1 with an evidence table for every gate. Mark G11
+   `N/A (no real streaming chat surface to capture)`, G14
+   `N/A (no G11 images to review before that arm point)`, and G12 streaming
+   `N/A (no streaming surface until P2)` rather than PASS. Retain the sanitized historical
+   disclosures about the first-session profile-scoping discrepancy and the earlier
+   orphaned-backend reap.
 4. Only after every armed Phase 0 gate is genuinely green, emit
    `GAUNTLET GREEN — PHASE 0` on its own line and stop. Do not begin P1 in that run.
 
