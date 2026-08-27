@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import os
 import subprocess
 import tempfile
 import unittest
@@ -11,6 +12,9 @@ from scripts import check_tier_b_run_snapshot as snapshot_checker
 REPO = Path(__file__).resolve().parent.parent
 HELPERS = REPO / "scripts" / "gauntlet_status.sh"
 GAUNTLET = REPO / "scripts" / "gauntlet.sh"
+LAUNCHER = REPO / "scripts" / "gauntlet.ps1"
+LAUNCHER_HELPERS = REPO / "scripts" / "gauntlet_launcher_helpers.ps1"
+LAUNCHER_TEST = REPO / "scripts" / "test_gauntlet_launcher.ps1"
 WORKFLOW = REPO / ".github" / "workflows" / "tier-b.yml"
 SHA_A = "a" * 40
 SHA_B = "b" * 40
@@ -306,6 +310,148 @@ talaria_assemble_g5_evidence \
 
 
 class TierBSourceBindingTests(ShellClassifierTests):
+    def tier_b_function(self, name: str, next_name: str) -> str:
+        source = GAUNTLET.read_text(encoding="utf-8")
+        return f"{name}() {{" + source.split(
+            f"{name}() {{", maxsplit=1
+        )[1].split(f"{next_name}()", maxsplit=1)[0]
+
+    def test_cli_family_classifier_rejects_crossed_or_ambiguous_clients(self) -> None:
+        classifier = self.tier_b_function(
+            "talaria_classify_tier_b_client_families",
+            "verify_tier_b_cli_version",
+        )
+        script = classifier + r'''
+talaria_classify_tier_b_client_families "$1" "$2"
+printf '%s\n%s\n' "$TIER_B_CLIENT_STATUS" "$TIER_B_CLIENT_DETAIL"
+'''
+        cases = (
+            ("/usr/bin/gh", "/mnt/c/Program Files/GitHub CLI/gh.exe", "PASS"),
+            ("", "/mnt/c/Program Files/GitHub CLI/gh.exe", "BLOCKED"),
+            ("gh", "/mnt/c/Program Files/GitHub CLI/gh.exe", "BLOCKED"),
+            ("/mnt/c/gh.exe", "/mnt/c/Program Files/GitHub CLI/gh.exe", "BLOCKED"),
+            ("/usr/bin/gh.exe", "/mnt/c/Program Files/GitHub CLI/gh.exe", "BLOCKED"),
+            ("/usr/bin/gh", "", "BLOCKED"),
+            ("/usr/bin/gh", "/usr/bin/gh", "BLOCKED"),
+            ("/usr/bin/gh", "/mnt/c/gh", "BLOCKED"),
+        )
+        for run_bin, log_bin, expected in cases:
+            with self.subTest(run_bin=run_bin, log_bin=log_bin):
+                result = subprocess.run(
+                    ["bash", "-c", script, "tier-b-client-family-test", run_bin, log_bin],
+                    cwd=REPO,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(result.stdout.splitlines()[0], expected)
+
+    def test_cli_version_probe_fails_closed_and_accepts_windows_crlf(self) -> None:
+        verifier = self.tier_b_function(
+            "verify_tier_b_cli_version",
+            "tier_b_run_gh",
+        )
+        artifact_parent = REPO / ".gauntlet"
+        artifact_parent.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="tier b cli version test ", dir=artifact_parent
+        ) as temporary:
+            artifact = Path(temporary)
+            executable = artifact / "mock gh.exe"
+            executable.write_text(
+                r'''#!/usr/bin/env bash
+case "${TALARIA_TEST_MODE:-valid}" in
+    valid) printf '%s\n' "$TALARIA_TEST_LINE" ;;
+    crlf) printf '%s\r\n' "$TALARIA_TEST_LINE" ;;
+    empty) : ;;
+    stderr) printf '%s\n' "$TALARIA_TEST_LINE"; printf '%s\n' warning >&2 ;;
+    wrong) printf '%s\n' 'gh version 0.0.0' ;;
+    nonzero) printf '%s\n' "$TALARIA_TEST_LINE"; exit 7 ;;
+esac
+''',
+                encoding="utf-8",
+            )
+            executable.chmod(0o755)
+            expected_line = "gh version 2.88.1 (2026-03-12)"
+            script = verifier + r'''
+ART="$1"
+verify_tier_b_cli_version "$2" "$3" log
+'''
+            for mode, expected_rc in (
+                ("valid", 0),
+                ("crlf", 0),
+                ("empty", 1),
+                ("stderr", 1),
+                ("wrong", 1),
+                ("nonzero", 1),
+            ):
+                with self.subTest(mode=mode):
+                    result = subprocess.run(
+                        ["bash", "-c", script, "tier-b-version-test", str(artifact), str(executable), expected_line],
+                        cwd=REPO,
+                        capture_output=True,
+                        text=True,
+                        env={**os.environ, "TALARIA_TEST_MODE": mode, "TALARIA_TEST_LINE": expected_line},
+                    )
+                    self.assertEqual(result.returncode, expected_rc, result.stdout + result.stderr)
+            non_executable_path = artifact / "not an executable"
+            non_executable_path.mkdir()
+            not_executable = subprocess.run(
+                ["bash", "-c", script, "tier-b-version-test", str(artifact), str(non_executable_path), expected_line],
+                cwd=REPO,
+                capture_output=True,
+                text=True,
+                env={**os.environ, "TALARIA_TEST_MODE": "valid", "TALARIA_TEST_LINE": expected_line},
+            )
+            self.assertNotEqual(not_executable.returncode, 0)
+            missing = subprocess.run(
+                ["bash", "-c", script, "tier-b-version-test", str(artifact), str(artifact / "missing gh.exe"), expected_line],
+                cwd=REPO,
+                capture_output=True,
+                text=True,
+                env={**os.environ, "TALARIA_TEST_MODE": "valid", "TALARIA_TEST_LINE": expected_line},
+            )
+            self.assertNotEqual(missing.returncode, 0)
+
+    def test_cli_wrappers_route_to_distinct_clients_without_fallback(self) -> None:
+        wrappers = self.tier_b_function("tier_b_run_gh", "tier_b_log_gh")
+        wrappers += self.tier_b_function("tier_b_log_gh", "cleanup_g2_temp")
+        script = wrappers + r'''
+native_client() { printf 'native|%s\n' "$*" >>"$1"; }
+windows_client() { printf 'windows|%s\n' "$*" >>"$1"; }
+record_path="$1"
+GH_RUN_BIN=native_client
+GH_LOG_BIN=windows_client
+tier_b_run_gh "$record_path" workflow run tier-b.yml
+tier_b_run_gh "$record_path" run list
+tier_b_run_gh "$record_path" run watch 123
+tier_b_run_gh "$record_path" run view 123 --json jobs
+tier_b_log_gh "$record_path" run view --job 456 --log
+'''
+        artifact_parent = REPO / ".gauntlet"
+        artifact_parent.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="tierb-client-routing-test-", dir=artifact_parent
+        ) as temporary:
+            record = Path(temporary) / "routes.log"
+            result = subprocess.run(
+                ["bash", "-c", script, "tier-b-client-routing-test", str(record)],
+                cwd=REPO,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(
+                record.read_text(encoding="utf-8").splitlines(),
+                [
+                    f"native|{record} workflow run tier-b.yml",
+                    f"native|{record} run list",
+                    f"native|{record} run watch 123",
+                    f"native|{record} run view 123 --json jobs",
+                    f"windows|{record} run view --job 456 --log",
+                ],
+            )
+
     def resolve_g6(self, *rows: str) -> subprocess.CompletedProcess[str]:
         source = GAUNTLET.read_text(encoding="utf-8")
         resolver = "resolve_tier_b_g6() {" + source.split(
@@ -352,6 +498,8 @@ exit "$result"
             script = fetcher + r'''
 ART="$1"
 TIER_B_REPOSITORY="markschonfeld/Talaria"
+GH_LOG_BIN=gh
+tier_b_log_gh() { "$GH_LOG_BIN" "$@"; }
 MOCK_JOB_ID="$2"
 MOCK_JOB_KEY="$3"
 MOCK_RC="$4"
@@ -430,6 +578,8 @@ fetch_tier_b_job_log "$MOCK_JOB_ID" "$MOCK_JOB_KEY"
             script = capture + r'''
 ART="$1"
 TIER_B_REPOSITORY="markschonfeld/Talaria"
+GH_RUN_BIN=gh
+tier_b_run_gh() { "$GH_RUN_BIN" "$@"; }
 EXPECTED_MARKER="$2"
 SNAPSHOT_KEY="$3"
 gh() {
@@ -625,6 +775,38 @@ exit "$capture_rc"
         self.assertEqual(script.count('--repo "$TIER_B_REPOSITORY"'), 5)
         self.assertIn("talaria_classify_tier_b_repository", tier_b)
 
+    def test_launcher_selects_windows_gh_only_for_job_logs(self) -> None:
+        launcher = LAUNCHER.read_text(encoding="utf-8")
+        helpers = LAUNCHER_HELPERS.read_text(encoding="utf-8")
+        launcher_test = LAUNCHER_TEST.read_text(encoding="utf-8")
+        script = GAUNTLET.read_text(encoding="utf-8")
+        self.assertIn(
+            "Get-Command gh.exe -CommandType Application -ErrorAction Stop",
+            launcher,
+        )
+        self.assertIn('"gh version 2.88.1 (2026-03-12)"', launcher)
+        self.assertIn("TALARIA_GH_LOG_BIN = $talariaGhWindows", launcher)
+        self.assertIn('"TALARIA_GH_LOG_BIN/up"', launcher)
+        self.assertIn("-Environment $talariaWslEnvironment", launcher)
+        self.assertIn("test_gauntlet_launcher.ps1", launcher)
+        self.assertIn("ArgumentList.Add($argument)", helpers)
+        self.assertIn("Program Files/GitHub CLI/gh.exe", launcher_test)
+        self.assertIn("an invalid version result was accepted", launcher_test)
+        self.assertIn("an invalid or ambiguous interop path was accepted", launcher_test)
+        self.assertIn(
+            'EXPECTED_GH_RUN_LINE="gh version 2.45.0 '
+            '(2025-07-18 Ubuntu 2.45.0-1ubuntu0.3)"',
+            script,
+        )
+        self.assertIn('EXPECTED_GH_LOG_LINE="gh version 2.88.1 (2026-03-12)"', script)
+        self.assertIn('GH_RUN_BIN="$(type -P gh 2>/dev/null || true)"', script)
+        self.assertIn('GH_LOG_BIN="${TALARIA_GH_LOG_BIN:-}"', script)
+        self.assertIn('/mnt/[a-zA-Z]/*/gh.exe', script)
+        self.assertEqual(script.count("tier_b_run_gh run"), 3)
+        self.assertEqual(script.count("tier_b_run_gh workflow"), 1)
+        self.assertEqual(script.count("tier_b_log_gh run"), 1)
+        self.assertNotIn("TALARIA_GH_BIN", launcher + script)
+
     def test_exact_snapshot_and_job_logs_are_source_and_origin_bound(self) -> None:
         script = GAUNTLET.read_text(encoding="utf-8")
         tier_b = script.split("tier_b() {", maxsplit=1)[1]
@@ -634,11 +816,11 @@ exit "$capture_rc"
         fetcher = script.split("fetch_tier_b_job_log() {", maxsplit=1)[1].split(
             "capture_tier_b_snapshot()", maxsplit=1
         )[0]
-        self.assertIn('gh run view "$run_id"', snapshot)
+        self.assertIn('tier_b_run_gh run view "$run_id"', snapshot)
         self.assertIn('--repo "$TIER_B_REPOSITORY"', snapshot)
         self.assertIn("--attempt 1", snapshot)
         self.assertIn(
-            "--json attempt,status,conclusion,databaseId,headSha,displayTitle,url,jobs",
+            "--json status,conclusion,databaseId,headSha,displayTitle,url,jobs",
             snapshot,
         )
         self.assertIn("scripts/check_tier_b_run_snapshot.py", snapshot)
@@ -647,9 +829,9 @@ exit "$capture_rc"
         self.assertIn('--expected-title "$expected_title"', snapshot)
         self.assertIn('--expected-attempt 1', snapshot)
         self.assertIn("fetch_tier_b_job_log", tier_b)
-        self.assertIn('gh run view --repo "$TIER_B_REPOSITORY"', fetcher)
+        self.assertIn('tier_b_log_gh run view --repo "$TIER_B_REPOSITORY"', fetcher)
         self.assertIn('--job "$job_id" --log', fetcher)
-        self.assertNotIn('gh run view "$run_id"', fetcher)
+        self.assertNotIn('run view "$run_id"', fetcher)
         self.assertIn("scripts/check_tier_b_status_log.py", tier_b)
         for argument in (
             "--ios-log",

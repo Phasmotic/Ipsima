@@ -51,11 +51,9 @@ def job_url(
 
 def step(name: str, number: int, conclusion: str = "success") -> dict[str, object]:
     return {
-        "completedAt": STEP_COMPLETED,
         "conclusion": conclusion,
         "name": name,
         "number": number,
-        "startedAt": STEP_STARTED,
         "status": "completed",
     }
 
@@ -87,7 +85,6 @@ def valid_snapshot(
             }
         )
     return {
-        "attempt": ATTEMPT,
         "status": "completed",
         "conclusion": conclusion,
         "databaseId": RUN_ID,
@@ -246,7 +243,6 @@ class TierBRunSnapshotTests(unittest.TestCase):
 
     def test_matching_nondefault_attempt_uses_its_exact_url_suffix(self) -> None:
         snapshot = valid_snapshot()
-        snapshot["attempt"] = 2
         snapshot["url"] = run_url(attempt=2)
         self.assert_pass(self._invoke(snapshot, expected_attempt="2"))
 
@@ -258,18 +254,17 @@ class TierBRunSnapshotTests(unittest.TestCase):
         extra = valid_snapshot()
         extra["unexpected"] = True
         variants.append(("extra", extra))
+        self_asserted_attempt = valid_snapshot()
+        self_asserted_attempt["attempt"] = ATTEMPT
+        variants.append(("self-asserted attempt", self_asserted_attempt))
         not_object: object = []
         variants.append(("array", not_object))
         for label, snapshot in variants:
             with self.subTest(case=label):
                 self.assert_blocked(self._invoke(snapshot))
 
-    def test_attempt_and_run_database_id_must_be_exact_positive_integers(self) -> None:
+    def test_run_database_id_must_be_an_exact_positive_integer(self) -> None:
         mutations = (
-            ("attempt mismatch", "attempt", 2),
-            ("attempt zero", "attempt", 0),
-            ("attempt bool", "attempt", True),
-            ("attempt string", "attempt", "1"),
             ("run mismatch", "databaseId", RUN_ID + 1),
             ("run zero", "databaseId", 0),
             ("run bool", "databaseId", True),
@@ -453,6 +448,16 @@ class TierBRunSnapshotTests(unittest.TestCase):
         extra_key = valid_snapshot()
         self._job(extra_key, "ios")["steps"][0]["unexpected"] = True
         variants.append(("extra key", extra_key))
+        self_asserted_started = valid_snapshot()
+        self._job(self_asserted_started, "ios")["steps"][0][
+            "startedAt"
+        ] = STEP_STARTED
+        variants.append(("self-asserted start timestamp", self_asserted_started))
+        self_asserted_completed = valid_snapshot()
+        self._job(self_asserted_completed, "ios")["steps"][0][
+            "completedAt"
+        ] = STEP_COMPLETED
+        variants.append(("self-asserted completion timestamp", self_asserted_completed))
         duplicate_number = valid_snapshot()
         steps = self._job(duplicate_number, "watchos")["steps"]
         steps[1]["number"] = steps[0]["number"]
@@ -490,7 +495,7 @@ class TierBRunSnapshotTests(unittest.TestCase):
             self._invoke(failure_without_failed_step, watch_rc="1")
         )
 
-    def test_job_and_step_timestamps_must_be_valid_and_nested(self) -> None:
+    def test_job_timestamps_must_be_valid_intervals(self) -> None:
         variants = []
         invalid_job = valid_snapshot()
         self._job(invalid_job, "ios")["completedAt"] = "2026-99-99T00:00:00Z"
@@ -499,18 +504,6 @@ class TierBRunSnapshotTests(unittest.TestCase):
         job = self._job(reversed_job, "watchos")
         job["startedAt"], job["completedAt"] = job["completedAt"], job["startedAt"]
         variants.append(("reversed job", reversed_job))
-        invalid_step = valid_snapshot()
-        self._job(invalid_step, "archive")["steps"][0]["startedAt"] = "invalid"
-        variants.append(("invalid step", invalid_step))
-        reversed_step = valid_snapshot()
-        item = self._job(reversed_step, "ios")["steps"][0]
-        item["startedAt"], item["completedAt"] = item["completedAt"], item["startedAt"]
-        variants.append(("reversed step", reversed_step))
-        outside_job = valid_snapshot()
-        self._job(outside_job, "watchos")["steps"][0][
-            "startedAt"
-        ] = "2025-12-31T23:59:59Z"
-        variants.append(("outside job", outside_job))
         for label, snapshot in variants:
             with self.subTest(case=label):
                 self.assert_blocked(self._invoke(snapshot))

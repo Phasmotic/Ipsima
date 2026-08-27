@@ -31,6 +31,8 @@ mkdir -p "$ART"
 EXPECTED_ENTRY="powershell-wsl"
 EXPECTED_NAMESPACE="pwsh-wsl-ubuntu-swift-6.3.3"
 EXPECTED_SWIFT_LINE="Swift version 6.3.3 (swift-6.3.3-RELEASE)"
+EXPECTED_GH_RUN_LINE="gh version 2.45.0 (2025-07-18 Ubuntu 2.45.0-1ubuntu0.3)"
+EXPECTED_GH_LOG_LINE="gh version 2.88.1 (2026-03-12)"
 SWIFTFORMAT_VERSION="0.62.1"
 SWIFTFORMAT_URL="https://github.com/nicklockwood/SwiftFormat/releases/download/0.62.1/swiftformat_linux.zip"
 SWIFTFORMAT_SHA256="61ff55f3581e2144a4ad114831167102c38be853df75c1477d20b40a8e8120aa"
@@ -44,6 +46,10 @@ XCODEGEN_VERSION="2.46.0"
 TIER_B_REPOSITORY="markschonfeld/Talaria"
 KIT="Packages/HermesKit"
 TOOLS="$ART/tools"
+GH_RUN_BIN=""
+GH_LOG_BIN=""
+TIER_B_CLIENT_STATUS=""
+TIER_B_CLIENT_DETAIL=""
 
 blocked_preflight() {
     printf 'GAUNTLET BLOCKED — %s\n' "$1" >&2
@@ -131,6 +137,66 @@ record() { # gate status detail
     esac
 }
 
+talaria_classify_tier_b_client_families() {
+    local run_bin="${1-}" log_bin="${2-}"
+    TIER_B_CLIENT_STATUS="BLOCKED"
+    TIER_B_CLIENT_DETAIL="Tier B GitHub CLI selection is malformed"
+    [ "$#" -eq 2 ] || return
+    case "$run_bin" in
+        /*) ;;
+        *)
+            TIER_B_CLIENT_DETAIL="the native WSL GitHub CLI is unavailable"
+            return
+            ;;
+    esac
+    case "$run_bin" in
+        /mnt/*|*.exe)
+            TIER_B_CLIENT_DETAIL="Tier B run operations require the native WSL GitHub CLI"
+            return
+            ;;
+    esac
+    case "$log_bin" in
+        /mnt/[a-zA-Z]/*/gh.exe) ;;
+        *)
+            TIER_B_CLIENT_DETAIL="Tier B job logs require the PowerShell-selected Windows GitHub CLI"
+            return
+            ;;
+    esac
+    TIER_B_CLIENT_STATUS="PASS"
+    TIER_B_CLIENT_DETAIL="Tier B GitHub CLI families are explicit"
+}
+
+verify_tier_b_cli_version() {
+    local cli_bin="${1-}" expected_line="${2-}" evidence_key="${3-}"
+    local stdout_path stderr_path version_rc version_line
+    [ "$#" -eq 3 ] && [ -n "$cli_bin" ] && [ -x "$cli_bin" ] || return 1
+    case "$evidence_key" in
+        run|log) ;;
+        *) return 1 ;;
+    esac
+    stdout_path="$ART/tierb-gh-$evidence_key-version.stdout"
+    stderr_path="$ART/tierb-gh-$evidence_key-version.stderr"
+    : >"$stdout_path" || return 1
+    : >"$stderr_path" || return 1
+    "$cli_bin" --version >"$stdout_path" 2>"$stderr_path"
+    version_rc=$?
+    version_line="$(tr -d '\r' <"$stdout_path" | sed -n '1p')"
+    [ "$version_rc" -eq 0 ] \
+        && [ -s "$stdout_path" ] \
+        && [ ! -s "$stderr_path" ] \
+        && [ "$version_line" = "$expected_line" ]
+}
+
+tier_b_run_gh() {
+    [ "$#" -gt 0 ] || return 1
+    "$GH_RUN_BIN" "$@"
+}
+
+tier_b_log_gh() {
+    [ "$#" -gt 0 ] || return 1
+    "$GH_LOG_BIN" "$@"
+}
+
 cleanup_g2_temp() {
     local cleanup_target="$1"
     case "$cleanup_target" in
@@ -186,7 +252,7 @@ fetch_tier_b_job_log() {
     # gh ignores a positional run ID when --job is present. Source binding
     # therefore comes from the validated canonical job URL in the run snapshot,
     # and the positional run argument is deliberately omitted here.
-    gh run view --repo "$TIER_B_REPOSITORY" --job "$job_id" --log \
+    tier_b_log_gh run view --repo "$TIER_B_REPOSITORY" --job "$job_id" --log \
         >"$output_path" 2>"$stderr_path"
     fetch_rc=$?
     [ "$fetch_rc" -eq 0 ] \
@@ -229,10 +295,10 @@ capture_tier_b_snapshot() {
         : >"$snapshot_path" || return 1
         : >"$stderr_path" || return 1
         : >"$verdict_path" || return 1
-        gh run view "$run_id" \
+        tier_b_run_gh run view "$run_id" \
             --repo "$TIER_B_REPOSITORY" \
             --attempt 1 \
-            --json attempt,status,conclusion,databaseId,headSha,displayTitle,url,jobs \
+            --json status,conclusion,databaseId,headSha,displayTitle,url,jobs \
             >"$snapshot_path" 2>"$stderr_path"
         view_rc=$?
         if [ "$view_rc" -eq 0 ] \
@@ -868,6 +934,21 @@ tier_b() {
     local ios_conclusion watchos_conclusion archive_conclusion
     local evidence_attempt evidence_ready=0 logs_ready
     local -a evidence_lines=()
+    GH_RUN_BIN="$(type -P gh 2>/dev/null || true)"
+    GH_LOG_BIN="${TALARIA_GH_LOG_BIN:-}"
+    talaria_classify_tier_b_client_families "$GH_RUN_BIN" "$GH_LOG_BIN"
+    if [ "$TIER_B_CLIENT_STATUS" != "PASS" ]; then
+        record "B*" BLOCKED "$TIER_B_CLIENT_DETAIL"
+        return
+    fi
+    if ! verify_tier_b_cli_version "$GH_RUN_BIN" "$EXPECTED_GH_RUN_LINE" run; then
+        record "B*" BLOCKED "expected $EXPECTED_GH_RUN_LINE for Tier B run operations"
+        return
+    fi
+    if ! verify_tier_b_cli_version "$GH_LOG_BIN" "$EXPECTED_GH_LOG_LINE" log; then
+        record "B*" BLOCKED "expected $EXPECTED_GH_LOG_LINE for Tier B job logs"
+        return
+    fi
     if ! python3 -B -m unittest \
         scripts.test_gauntlet_status.TierBSourceBindingTests \
         scripts.test_check_tier_b_run_snapshot \
@@ -923,13 +1004,13 @@ tier_b() {
         return
     fi
     expected_title="$TALARIA_CLASS_VALUE2"
-    gh workflow run tier-b.yml --repo "$TIER_B_REPOSITORY" --ref "$branch" \
+    tier_b_run_gh workflow run tier-b.yml --repo "$TIER_B_REPOSITORY" --ref "$branch" \
         --field "correlation_token=$correlation_token" \
         >"$ART/tierb-dispatch.log" 2>&1 \
         || { record "B*" BLOCKED "workflow dispatch failed (see .gauntlet/tierb-dispatch.log)"; return; }
     run_id=""
     for attempt in $(seq 1 20); do
-        run_record="$(gh run list \
+        run_record="$(tier_b_run_gh run list \
             --repo "$TIER_B_REPOSITORY" \
             --workflow tier-b.yml \
             --branch "$branch" \
@@ -939,6 +1020,7 @@ tier_b() {
             --jq '.[] | "\(.databaseId)|\(.headSha)|\(.displayTitle)"' \
             2>>"$ART/tierb-dispatch.log")"
         list_rc=$?
+        run_record="${run_record//$'\r'/}"
         talaria_classify_tier_b_run_selection \
             "$list_rc" "$run_record" "$head_sha" "$expected_title"
         case "$TALARIA_CLASS_STATUS" in
@@ -958,7 +1040,7 @@ tier_b() {
         return
     fi
     echo "following run $run_id ..."
-    gh run watch "$run_id" --repo "$TIER_B_REPOSITORY" \
+    tier_b_run_gh run watch "$run_id" --repo "$TIER_B_REPOSITORY" \
         --exit-status >"$ART/tierb-watch.log" 2>&1
     watch_rc=$?
     if ! capture_tier_b_snapshot \

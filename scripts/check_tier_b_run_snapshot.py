@@ -27,7 +27,6 @@ EXPECTED_JOBS = {
 REPORTER_STEP = "Emit Tier B job status"
 TOP_KEYS = frozenset(
     {
-        "attempt",
         "status",
         "conclusion",
         "databaseId",
@@ -50,7 +49,7 @@ JOB_KEYS = frozenset(
     }
 )
 STEP_KEYS = frozenset(
-    {"completedAt", "conclusion", "name", "number", "startedAt", "status"}
+    {"conclusion", "name", "number", "status"}
 )
 SHA_PATTERN = re.compile(r"[0-9a-f]{40}")
 TITLE_PATTERN = re.compile(r"Talaria Tier B: talaria-[0-9a-f]{32}")
@@ -172,8 +171,6 @@ def _interval(
 
 def _validate_steps(
     value: object,
-    job_started: datetime,
-    job_completed: datetime,
     job_conclusion: str,
 ) -> None:
     if not isinstance(value, list) or not value:
@@ -201,11 +198,6 @@ def _validate_steps(
         conclusion = step["conclusion"]
         if conclusion not in {"success", "failure", "skipped"}:
             raise EvidenceBlocked("job step conclusion is indeterminate")
-        started, completed = _interval(
-            step["startedAt"], step["completedAt"], "job step"
-        )
-        if started < job_started or completed > job_completed:
-            raise EvidenceBlocked("job step timestamps fall outside the job interval")
         if conclusion == "failure":
             has_failed_step = True
         if name == REPORTER_STEP:
@@ -248,10 +240,8 @@ def _validate_job(
     conclusion = job["conclusion"]
     if conclusion not in {"success", "failure"}:
         raise EvidenceBlocked("job conclusion is indeterminate")
-    job_started, job_completed = _interval(
-        job["startedAt"], job["completedAt"], "job"
-    )
-    _validate_steps(job["steps"], job_started, job_completed, conclusion)
+    _interval(job["startedAt"], job["completedAt"], "job")
+    _validate_steps(job["steps"], conclusion)
     return JobEvidence(key, database_id, conclusion)
 
 
@@ -268,8 +258,6 @@ def validate_snapshot(
     snapshot = _exact_object(value, TOP_KEYS, "snapshot")
     if _positive_integer(snapshot["databaseId"], "run database ID") != expected_run_id:
         raise EvidenceBlocked("run database ID does not match")
-    if _positive_integer(snapshot["attempt"], "run attempt") != expected_attempt:
-        raise EvidenceBlocked("run attempt does not match")
     if snapshot["status"] != "completed":
         raise EvidenceBlocked("run is not completed")
     run_conclusion = snapshot["conclusion"]

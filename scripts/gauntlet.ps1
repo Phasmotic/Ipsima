@@ -6,97 +6,83 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+. (Join-Path $PSScriptRoot "gauntlet_launcher_helpers.ps1")
+
 if ($PSVersionTable.PSVersion.Major -lt 7) {
     Write-Error "GAUNTLET BLOCKED — the launcher requires PowerShell 7 or later."
     exit 1
-}
-
-function Invoke-TalariaProcess {
-    param(
-        [Parameter(Mandatory)]
-        [string] $FilePath,
-
-        [Parameter(Mandatory)]
-        [string[]] $ArgumentList,
-
-        [switch] $EchoOutput
-    )
-
-    $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
-    $startInfo.FileName = $FilePath
-    $startInfo.UseShellExecute = $false
-    $startInfo.CreateNoWindow = $true
-    $startInfo.RedirectStandardOutput = $true
-    $startInfo.RedirectStandardError = $true
-    $startInfo.StandardOutputEncoding = [System.Text.UTF8Encoding]::new($false)
-    $startInfo.StandardErrorEncoding = [System.Text.UTF8Encoding]::new($false)
-    foreach ($argument in $ArgumentList) {
-        [void] $startInfo.ArgumentList.Add($argument)
-    }
-
-    $process = [System.Diagnostics.Process]::new()
-    $process.StartInfo = $startInfo
-    try {
-        if (-not $process.Start()) {
-            throw "The native process did not start."
-        }
-
-        # Drain both streams concurrently so a full pipe cannot deadlock the launcher.
-        $standardOutputTask = $process.StandardOutput.ReadToEndAsync()
-        $standardErrorTask = $process.StandardError.ReadToEndAsync()
-        $process.WaitForExit()
-        $standardOutput = $standardOutputTask.GetAwaiter().GetResult()
-        $standardError = $standardErrorTask.GetAwaiter().GetResult()
-        $exitCode = $process.ExitCode
-    }
-    catch {
-        Write-Error "GAUNTLET BLOCKED — the WSL process could not be executed."
-        exit 1
-    }
-    finally {
-        $process.Dispose()
-    }
-
-    if ($EchoOutput) {
-        if ($standardOutput.Length -gt 0) {
-            [Console]::Out.Write($standardOutput)
-        }
-        if ($standardError.Length -gt 0) {
-            [Console]::Error.Write($standardError)
-        }
-    }
-
-    [PSCustomObject]@{
-        ExitCode = $exitCode
-        StandardOutput = $standardOutput
-        StandardError = $standardError
-        OutputLength = $standardOutput.Length + $standardError.Length
-    }
 }
 
 $talariaDistro = "Ubuntu"
 $talariaEntry = "powershell-wsl"
 $talariaNamespace = "pwsh-wsl-ubuntu-swift-6.3.3"
 $talariaRepoWindows = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
-$talariaRepoPortable = $talariaRepoWindows.Replace([char] 92, [char] 47)
 $talariaWsl = (Get-Command wsl.exe -ErrorAction Stop).Source
+$talariaGhLogWsl = ""
+$talariaWslEnvironment = @{}
 
-$talariaTranslation = Invoke-TalariaProcess -FilePath $talariaWsl -ArgumentList @(
-    "-d", $talariaDistro,
-    "--", "wslpath", "-a", "-u", $talariaRepoPortable
+$talariaLauncherSelfTestArguments = @(
+    "-NoProfile",
+    "-File",
+    (Join-Path $PSScriptRoot "test_gauntlet_launcher.ps1")
 )
-$talariaRepoWsl = $talariaTranslation.StandardOutput -split "\r?\n" |
-    Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
-    Select-Object -Last 1
-
-if ($talariaTranslation.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($talariaRepoWsl)) {
-    Write-Error "GAUNTLET BLOCKED — WSL path translation returned no usable result."
+$talariaLauncherSelfTest = Invoke-TalariaProcess `
+    -FilePath (Join-Path $PSHOME "pwsh.exe") `
+    -ArgumentList $talariaLauncherSelfTestArguments
+if (
+    $talariaLauncherSelfTest.ExitCode -ne 0 -or
+    $talariaLauncherSelfTest.StandardError.Length -ne 0 -or
+    $talariaLauncherSelfTest.StandardOutput -cne "GAUNTLET LAUNCHER SELF-TEST PASS"
+) {
+    Write-Error "GAUNTLET BLOCKED — launcher transport self-tests failed."
     exit 1
 }
-$talariaRepoWsl = $talariaRepoWsl.Trim()
-if (-not $talariaRepoWsl.StartsWith("/", [StringComparison]::Ordinal)) {
-    Write-Error "GAUNTLET BLOCKED — WSL path translation returned an invalid result."
+
+$talariaRepoWsl = ConvertTo-TalariaWslInteropPath $talariaRepoWindows
+if ([string]::IsNullOrWhiteSpace($talariaRepoWsl)) {
+    Write-Error "GAUNTLET BLOCKED — the repository path cannot be represented in WSL interop."
     exit 1
+}
+
+if ($TierB) {
+    try {
+        $talariaGhWindows = (
+            Get-Command gh.exe -CommandType Application -ErrorAction Stop |
+                Select-Object -First 1
+        ).Source
+    }
+    catch {
+        Write-Error "GAUNTLET BLOCKED — Tier B requires the Windows GitHub CLI."
+        exit 1
+    }
+    $talariaGhVersion = Invoke-TalariaProcess -FilePath $talariaGhWindows -ArgumentList @(
+        "--version"
+    )
+    if (-not (Test-TalariaProcessVersion `
+        -ProcessResult $talariaGhVersion `
+        -ExpectedLine "gh version 2.88.1 (2026-03-12)")) {
+        Write-Error "GAUNTLET BLOCKED — Tier B requires Windows GitHub CLI 2.88.1."
+        exit 1
+    }
+
+    $talariaGhLogWsl = ConvertTo-TalariaWslInteropPath $talariaGhWindows
+    if ([string]::IsNullOrWhiteSpace($talariaGhLogWsl)) {
+        Write-Error "GAUNTLET BLOCKED — the GitHub CLI path could not be translated for WSL."
+        exit 1
+    }
+    $talariaExistingWslEnv = [Environment]::GetEnvironmentVariable("WSLENV", "Process")
+    $talariaWslEnvEntries = @(
+        $talariaExistingWslEnv -split ":" |
+            Where-Object {
+                -not [string]::IsNullOrWhiteSpace($_) -and
+                $_ -notmatch "^TALARIA_GH_LOG_BIN(?:/.*)?$"
+            }
+    )
+    $talariaWslEnvEntries += "TALARIA_GH_LOG_BIN/up"
+    $talariaWslEnvironment = @{
+        TALARIA_GH_LOG_BIN = $talariaGhWindows
+        WSLENV = $talariaWslEnvEntries -join ":"
+    }
 }
 
 $talariaScript = "$talariaRepoWsl/scripts/gauntlet.sh"
@@ -111,7 +97,11 @@ if ($TierB) {
     $talariaArguments += "--tier-b"
 }
 
-$talariaRun = Invoke-TalariaProcess -FilePath $talariaWsl -ArgumentList $talariaArguments -EchoOutput
+$talariaRun = Invoke-TalariaProcess `
+    -FilePath $talariaWsl `
+    -ArgumentList $talariaArguments `
+    -Environment $talariaWslEnvironment `
+    -EchoOutput
 if ($talariaRun.ExitCode -eq 0 -and $talariaRun.OutputLength -eq 0) {
     Write-Error "GAUNTLET BLOCKED — WSL returned exit 0 with completely empty output."
     exit 1

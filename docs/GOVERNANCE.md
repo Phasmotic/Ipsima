@@ -64,6 +64,8 @@ checked against their published SHA-256 digest.
 | SwiftLint | 0.65.0 | The Linux release asset is verified for Tier A; `macos-26` supplies the same version. |
 | gitleaks | 8.30.1 | The release asset is explicitly installed, digest-verified, and version-checked. |
 | XcodeGen | 2.46.0 | The release asset is explicitly installed, digest-verified, and version-checked. |
+| GitHub CLI (run evidence) | 2.45.0 | Native WSL handles dispatch, run selection, watching, and the exact run-snapshot schema. |
+| GitHub CLI (job logs) | 2.88.1 | The PowerShell launcher selects and version-checks the Windows CLI used only for per-job log retrieval. |
 
 The macOS runner inventory supplies SwiftFormat and SwiftLint at the required versions. Gitleaks
 and XcodeGen are not assumed from runner state; the gauntlet installs and verifies their pinned
@@ -77,6 +79,21 @@ temporary directories and compares recursive output hashes; the generated projec
 untracked.
 
 ## Tier B result evidence
+
+Tier B uses two explicitly versioned GitHub CLI clients because their observable interfaces differ.
+Native WSL 2.45.0 performs dispatch, run selection, watching, and snapshot capture; the snapshot
+validator requires that client's exact four-field job-step schema. Its per-job log endpoint can
+return exit 0 with completely empty output, which is the project's explicit `BLOCKED` signature,
+so it is never used to fetch job logs. For that operation alone, the PowerShell launcher resolves
+Windows 2.88.1 without a hardcoded local path, verifies its exact version, translates its path for
+WSL through path-aware `WSLENV`, and passes it to the Bash gate. Bash separately resolves and
+verifies native 2.45.0, then revalidates the interop path and version of 2.88.1. Neither client is
+a fallback for the other; missing, stderr-bearing, or empty CLI evidence remains `BLOCKED`.
+
+Before entering WSL, the PowerShell launcher runs an executable transport self-test. It verifies
+that process arguments remain distinct across space-bearing script paths and environment values,
+and adversarially rejects wrong-version, stderr-bearing, empty, ambiguous, and non-interop
+results. The launcher blocks before any gate or dispatch if this bridge check fails.
 
 GitHub Actions reports every nonzero step exit as the same workflow conclusion, `failure`; that
 summary cannot distinguish a deterministic gate failure from missing or indeterminate evidence.
