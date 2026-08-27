@@ -1,6 +1,8 @@
 import Foundation
 
-// Line framing + canonical encoding for the tui_gateway WebSocket protocol.
+// Canonical JSON-RPC encoding plus newline-delimited stdio/fixture helpers.
+// WebSocket transports send one `encode` result per text message and do not
+// use the line-framing helpers.
 //
 // Canonical form: UTF-8, compact separators, lexicographically sorted object
 // keys, forward slashes unescaped. Every committed fixture is stored in this
@@ -18,7 +20,7 @@ public struct WireCodec: Sendable {
         self.encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
     }
 
-    /// Decode one newline-delimited frame.
+    /// Decode one newline-delimited stdio or JSONL frame.
     public func decodeLine(_ line: String) throws -> JSONRPCEnvelope {
         guard let data = line.data(using: .utf8) else {
             throw CodecError.invalidUTF8
@@ -43,14 +45,14 @@ public struct WireCodec: Sendable {
         }
     }
 
-    /// Canonical encoding plus the newline terminator.
+    /// Canonical encoding plus the stdio/JSONL newline terminator.
     public func frame(_ envelope: JSONRPCEnvelope) throws -> Data {
         var data = try encode(envelope)
         data.append(contentsOf: [0x0A])
         return data
     }
 
-    /// Split a received byte stream into logical frames. Blank lines are
+    /// Split a newline-delimited stdio byte stream into logical frames. Blank lines are
     /// skipped; a missing trailing newline on the final line is tolerated.
     public func splitFrames(_ payload: Data) -> [Data] {
         guard let text = String(data: payload, encoding: .utf8) else { return [] }

@@ -31,10 +31,13 @@ EXPECTED_HANDWRITTEN_TESTS = frozenset(
     {
         "HermesKitTests.WireCodecTests/testAllGoldenFixturesDecodeAndReEncodeIdentically",
         "HermesKitTests.WireCodecTests/testCanonicalFormIsSortedCompactAndStable",
+        "HermesKitTests.WireCodecTests/testCodecFailurePathsExposeCausesAndRejectInvalidInputs",
+        "HermesKitTests.WireCodecTests/testEnvelopeClassificationsAndProgrammaticErrorRoundTrip",
         "HermesKitTests.WireCodecTests/testErrorObjectWithUnknownMemberRoundTrips",
         "HermesKitTests.WireCodecTests/testEventWithUnknownTopLevelMembersSurvivesRoundTrip",
         "HermesKitTests.WireCodecTests/testIDVariantsRoundTrip",
         "HermesKitTests.WireCodecTests/testIntegerStaysIntegerAcrossRoundTrip",
+        "HermesKitTests.WireCodecTests/testJSONValueDoubleAndAccessorsRoundTrip",
         "HermesKitTests.WireCodecTests/testSplitFramesHandlesBatchTrailingNewlineAndBlanks",
     }
 )

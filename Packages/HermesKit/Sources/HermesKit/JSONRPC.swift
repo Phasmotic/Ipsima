@@ -2,10 +2,11 @@ import Foundation
 
 // JSON-RPC 2.0 envelope types for the tui_gateway WebSocket protocol.
 //
-// Framing contract (docs/PROTOCOL.md): newline-delimited JSON-RPC, both
-// directions. Envelopes preserve *unknown* members through decode/encode so
-// golden-frame round-trips stay byte-identical even when the gateway carries
-// fields this catalog predates.
+// Framing contract (docs/PROTOCOL.md): one JSON-RPC object per WebSocket text
+// message in both directions; only stdio and JSONL fixtures are newline-delimited.
+// Envelopes preserve *unknown* members through decode/encode so golden-frame
+// round-trips stay byte-identical even when the gateway carries fields this
+// catalog predates.
 
 public enum JSONRPCID: Sendable, Equatable, Hashable {
     case null

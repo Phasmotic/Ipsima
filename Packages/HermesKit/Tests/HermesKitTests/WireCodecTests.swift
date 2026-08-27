@@ -1,3 +1,4 @@
+import Foundation
 @testable import HermesKit
 import XCTest
 
@@ -77,6 +78,96 @@ final class WireCodecTests: XCTestCase {
         let absentID = try codec.decodeLine(#"{"jsonrpc":"2.0","method":"ping"}"#)
         XCTAssertNil(absentID.id)
         XCTAssertNotEqual(nullID, absentID)
+    }
+
+    func testJSONValueDoubleAndAccessorsRoundTrip() throws {
+        let value: JSONValue = .object([
+            "ratio": .double(1.25),
+            "state": .null,
+        ])
+        let encoded = try JSONEncoder().encode(value)
+        let decoded = try JSONDecoder().decode(JSONValue.self, from: encoded)
+
+        XCTAssertEqual(decoded, value)
+        XCTAssertEqual(decoded["ratio"], .double(1.25))
+        XCTAssertNil(JSONValue.string("not-an-object")["missing"])
+        XCTAssertTrue(JSONValue.null.isNull)
+        XCTAssertFalse(JSONValue.bool(false).isNull)
+    }
+
+    func testEnvelopeClassificationsAndProgrammaticErrorRoundTrip() throws {
+        let request = JSONRPCEnvelope.request(id: 9, method: "session.list")
+        XCTAssertTrue(request.isRequest)
+        XCTAssertFalse(request.isNotification)
+        XCTAssertFalse(request.isSuccess)
+        XCTAssertFalse(request.isError)
+
+        let notification = JSONRPCEnvelope.notification(method: "prompt.submit")
+        XCTAssertFalse(notification.isRequest)
+        XCTAssertTrue(notification.isNotification)
+        XCTAssertFalse(notification.isSuccess)
+        XCTAssertFalse(notification.isError)
+
+        let success = try codec.decodeLine(#"{"id":9,"jsonrpc":"2.0","result":null}"#)
+        XCTAssertFalse(success.isRequest)
+        XCTAssertFalse(success.isNotification)
+        XCTAssertTrue(success.isSuccess)
+        XCTAssertFalse(success.isError)
+        XCTAssertEqual(success.result, .null)
+        XCTAssertEqual(
+            try String(data: self.codec.encode(success), encoding: .utf8),
+            #"{"id":9,"jsonrpc":"2.0","result":null}"#
+        )
+
+        let rpcError = JSONRPCError(
+            code: -32000,
+            message: "synthetic failure",
+            data: .object(["retry_after": .int(2)]),
+            additionalMembers: ["retryable": .bool(true)]
+        )
+        let failure = JSONRPCEnvelope(id: .string("request-9"), error: rpcError)
+        let decodedFailure = try codec.decode(self.codec.encode(failure))
+        XCTAssertEqual(decodedFailure, failure)
+        XCTAssertFalse(decodedFailure.isRequest)
+        XCTAssertFalse(decodedFailure.isNotification)
+        XCTAssertFalse(decodedFailure.isSuccess)
+        XCTAssertTrue(decodedFailure.isError)
+    }
+
+    func testCodecFailurePathsExposeCausesAndRejectInvalidInputs() throws {
+        XCTAssertThrowsError(try self.codec.decode(Data(#"{"#.utf8))) { error in
+            guard case let CodecError.underlying(message, cause) = error else {
+                return XCTFail("malformed JSON produced an unexpected error: \(error)")
+            }
+            XCTAssertTrue(message.hasPrefix("decode failed:"))
+            XCTAssertNotNil(cause)
+            XCTAssertEqual(String(describing: error), message)
+        }
+
+        XCTAssertThrowsError(
+            try self.codec.decodeLine(#"{"id":1.5,"jsonrpc":"2.0","method":"ping"}"#)
+        ) { error in
+            guard case let CodecError.underlying(message, cause) = error else {
+                return XCTFail("invalid JSON-RPC id produced an unexpected error: \(error)")
+            }
+            XCTAssertTrue(message.hasPrefix("decode failed:"))
+            XCTAssertNotNil(cause)
+        }
+
+        let nonFinite = JSONRPCEnvelope(
+            method: "event",
+            params: .object(["value": .double(.infinity)])
+        )
+        XCTAssertThrowsError(try self.codec.encode(nonFinite)) { error in
+            guard case let CodecError.underlying(message, cause) = error else {
+                return XCTFail("non-finite JSON produced an unexpected error: \(error)")
+            }
+            XCTAssertTrue(message.hasPrefix("encode failed:"))
+            XCTAssertNotNil(cause)
+        }
+
+        XCTAssertEqual(CodecError.invalidUTF8.description, "frame is not valid UTF-8")
+        XCTAssertTrue(WireCodec.shared.splitFrames(Data([0xFF, 0xFE])).isEmpty)
     }
 
     // MARK: - Framing
