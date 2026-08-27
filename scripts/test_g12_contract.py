@@ -46,6 +46,12 @@ class G12DiagnosticContractTests(unittest.TestCase):
         self.assertIn("--path .gauntlet/ui.xcresult", section)
         self.assertIn("--compact", section)
         self.assertIn("test ! -s .gauntlet/g12-metrics.stderr", section)
+        self.assertIn("G12_SCHEMA_BEGIN", section)
+        self.assertIn("--schema-version 0.1.0", section)
+        self.assertIn("test -s .gauntlet/g12-metrics-schema.json", section)
+        self.assertIn("test ! -s .gauntlet/g12-metrics-schema.stderr", section)
+        self.assertIn("shasum -a 256 .gauntlet/g12-metrics-schema.json", section)
+        self.assertIn("G12_SCHEMA_END", section)
         self.assertIn("G12 BLOCKED", section)
         self.assertIn("exit 2", section)
 

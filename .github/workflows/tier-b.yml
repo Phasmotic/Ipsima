@@ -176,7 +176,21 @@ jobs:
             | tee .gauntlet/g12-metrics.json
           test -s .gauntlet/g12-metrics.json
           test ! -s .gauntlet/g12-metrics.stderr
-          echo "G12 BLOCKED — Xcode 26.6 metrics schema is not pinned yet." >&2
+          echo "G12_SCHEMA_BEGIN"
+          xcrun xcresulttool get test-results metrics \
+            --schema \
+            --schema-version 0.1.0 \
+            --path .gauntlet/ui.xcresult \
+            --compact \
+            2>.gauntlet/g12-metrics-schema.stderr \
+            | tee .gauntlet/g12-metrics-schema.json
+          echo "G12_SCHEMA_END"
+          test -s .gauntlet/g12-metrics-schema.json
+          test ! -s .gauntlet/g12-metrics-schema.stderr
+          shasum -a 256 .gauntlet/g12-metrics-schema.json \
+            | tee .gauntlet/g12-metrics-schema.sha256
+          test -s .gauntlet/g12-metrics-schema.sha256
+          echo "G12 BLOCKED — Xcode 26.6 metrics schema digest is not pinned yet." >&2
           exit 2
 
       - name: G11 — N/A (no UI surface yet)
