@@ -170,6 +170,117 @@ resolve_tier_b_g6() {
     RESULTS[$deferred_index]="G6|PASS|authoritative two-generation hash check passed in Tier B run $1"
 }
 
+fetch_tier_b_job_log() {
+    local job_id="${1-}" job_key="${2-}"
+    local output_path="" stderr_path="" fetch_rc
+    if [ "$#" -ne 2 ] || [[ ! "$job_id" =~ ^[1-9][0-9]*$ ]]; then
+        return 1
+    fi
+    case "$job_key" in
+        ios|watchos|archive) output_path="$ART/tierb-$job_key.log" ;;
+        *) return 1 ;;
+    esac
+    stderr_path="$output_path.stderr"
+    : >"$output_path" || return 1
+    : >"$stderr_path" || return 1
+    # gh ignores a positional run ID when --job is present. Source binding
+    # therefore comes from the validated canonical job URL in the run snapshot,
+    # and the positional run argument is deliberately omitted here.
+    gh run view --repo "$TIER_B_REPOSITORY" --job "$job_id" --log \
+        >"$output_path" 2>"$stderr_path"
+    fetch_rc=$?
+    [ "$fetch_rc" -eq 0 ] \
+        && [ -s "$output_path" ] \
+        && [ ! -s "$stderr_path" ]
+}
+
+capture_tier_b_snapshot() {
+    local run_id="${1-}" head_sha="${2-}" expected_title="${3-}"
+    local watch_rc="${4-}" expected_marker="${5-}"
+    local snapshot_key="${6-}" snapshot_path="" stderr_path="" verdict_path=""
+    local snapshot_attempt view_rc checker_rc snapshot_marker=""
+    local snapshot_pattern='^TIER B SNAPSHOT PASS: ios=([1-9][0-9]*)/(success|failure) watchos=([1-9][0-9]*)/(success|failure) archive=([1-9][0-9]*)/(success|failure) conclusion=(success|failure) digest=([0-9a-f]{64})$'
+    local -a snapshot_lines=()
+    TIER_B_SNAPSHOT_MARKER=""
+    TIER_B_IOS_JOB_ID=""
+    TIER_B_IOS_CONCLUSION=""
+    TIER_B_WATCHOS_JOB_ID=""
+    TIER_B_WATCHOS_CONCLUSION=""
+    TIER_B_ARCHIVE_JOB_ID=""
+    TIER_B_ARCHIVE_CONCLUSION=""
+    TIER_B_RUN_CONCLUSION=""
+    TIER_B_SNAPSHOT_DIGEST=""
+    if [ "$#" -ne 6 ] \
+        || [[ ! "$run_id" =~ ^[1-9][0-9]*$ ]] \
+        || [[ ! "$head_sha" =~ ^[0-9a-f]{40}$ ]] \
+        || [[ ! "$expected_title" =~ ^Talaria\ Tier\ B:\ talaria-[0-9a-f]{32}$ ]] \
+        || [[ ! "$watch_rc" =~ ^[0-9]+$ ]]; then
+        return 1
+    fi
+    case "$snapshot_key" in
+        pre|post)
+            snapshot_path="$ART/tierb-$snapshot_key-snapshot.json"
+            stderr_path="$ART/tierb-$snapshot_key-snapshot.stderr"
+            verdict_path="$ART/tierb-$snapshot_key-snapshot-verdict.log"
+            ;;
+        *) return 1 ;;
+    esac
+    for snapshot_attempt in $(seq 1 12); do
+        : >"$snapshot_path" || return 1
+        : >"$stderr_path" || return 1
+        : >"$verdict_path" || return 1
+        gh run view "$run_id" \
+            --repo "$TIER_B_REPOSITORY" \
+            --attempt 1 \
+            --json attempt,status,conclusion,databaseId,headSha,displayTitle,url,jobs \
+            >"$snapshot_path" 2>"$stderr_path"
+        view_rc=$?
+        if [ "$view_rc" -eq 0 ] \
+            && [ -s "$snapshot_path" ] \
+            && [ ! -s "$stderr_path" ]; then
+            python3 -B scripts/check_tier_b_run_snapshot.py \
+                --snapshot "$snapshot_path" \
+                --expected-run-id "$run_id" \
+                --expected-head-sha "$head_sha" \
+                --expected-title "$expected_title" \
+                --expected-repository "$TIER_B_REPOSITORY" \
+                --watch-rc "$watch_rc" \
+                --expected-attempt 1 \
+                >"$verdict_path" 2>&1
+            checker_rc=$?
+            snapshot_lines=()
+            if [ "$checker_rc" -eq 0 ] \
+                && mapfile -t snapshot_lines <"$verdict_path" \
+                && [ "${#snapshot_lines[@]}" -eq 1 ]; then
+                snapshot_marker="${snapshot_lines[0]}"
+                if [[ "$snapshot_marker" =~ $snapshot_pattern ]]; then
+                    if [ -n "$expected_marker" ] \
+                        && [ "$snapshot_marker" != "$expected_marker" ]; then
+                        # This is validated contradictory evidence, not eventual
+                        # unavailability. Do not retry until an earlier value
+                        # happens to reappear.
+                        return 2
+                    fi
+                    TIER_B_SNAPSHOT_MARKER="$snapshot_marker"
+                    TIER_B_IOS_JOB_ID="${BASH_REMATCH[1]}"
+                    TIER_B_IOS_CONCLUSION="${BASH_REMATCH[2]}"
+                    TIER_B_WATCHOS_JOB_ID="${BASH_REMATCH[3]}"
+                    TIER_B_WATCHOS_CONCLUSION="${BASH_REMATCH[4]}"
+                    TIER_B_ARCHIVE_JOB_ID="${BASH_REMATCH[5]}"
+                    TIER_B_ARCHIVE_CONCLUSION="${BASH_REMATCH[6]}"
+                    TIER_B_RUN_CONCLUSION="${BASH_REMATCH[7]}"
+                    TIER_B_SNAPSHOT_DIGEST="${BASH_REMATCH[8]}"
+                    return 0
+                fi
+            fi
+        fi
+        if [ "$snapshot_attempt" -lt 12 ]; then
+            sleep 5
+        fi
+    done
+    return 1
+}
+
 section() { printf '\n=== %s ===\n' "$1"; }
 
 # ---- G1: swift build debug + release, zero warnings -------------------------
@@ -751,12 +862,15 @@ tier_b() {
     section "Tier B · dispatching macos-26 workflow"
     local branch branch_rc origin_url origin_url_rc correlation_token token_rc expected_title
     local run_record run_id list_rc watch_rc attempt
-    local head_sha head_rc remote_record remote_rc dirty_state dirty_rc final_record view_rc
-    local final_conclusion logs_rc evidence_rc evidence_marker
-    local evidence_attempt evidence_ready=0
+    local head_sha head_rc remote_record remote_rc dirty_state dirty_rc
+    local final_conclusion evidence_rc evidence_marker snapshot_marker snapshot_rc
+    local ios_job_id watchos_job_id archive_job_id
+    local ios_conclusion watchos_conclusion archive_conclusion
+    local evidence_attempt evidence_ready=0 logs_ready
     local -a evidence_lines=()
     if ! python3 -B -m unittest \
         scripts.test_gauntlet_status.TierBSourceBindingTests \
+        scripts.test_check_tier_b_run_snapshot \
         scripts.test_check_tier_b_status_log \
         >"$ART/tierb-binding-selftest.log" 2>&1; then
         record "B*" BLOCKED "Tier B source-binding self-tests failed (see .gauntlet/tierb-binding-selftest.log)"
@@ -847,39 +961,36 @@ tier_b() {
     gh run watch "$run_id" --repo "$TIER_B_REPOSITORY" \
         --exit-status >"$ART/tierb-watch.log" 2>&1
     watch_rc=$?
-    final_record="$(gh run view "$run_id" \
-        --repo "$TIER_B_REPOSITORY" \
-        --json status,conclusion,headSha,displayTitle \
-        --jq '"\(.status)|\(.conclusion // "")|\(.headSha)|\(.displayTitle)"' \
-        2>>"$ART/tierb-watch.log")"
-    view_rc=$?
-    talaria_classify_tier_b_final \
-        "$view_rc" "$final_record" "$head_sha" "$expected_title" "$watch_rc"
-    if [ "$TALARIA_CLASS_STATUS" != "READY" ]; then
-        record "B*" BLOCKED "$TALARIA_CLASS_DETAIL"
+    if ! capture_tier_b_snapshot \
+        "$run_id" "$head_sha" "$expected_title" "$watch_rc" "" pre; then
+        record "B*" BLOCKED "complete source-bound Tier B run and job evidence did not become available"
         return
     fi
-    final_conclusion="$TALARIA_CLASS_VALUE2"
+    snapshot_marker="$TIER_B_SNAPSHOT_MARKER"
+    ios_job_id="$TIER_B_IOS_JOB_ID"
+    ios_conclusion="$TIER_B_IOS_CONCLUSION"
+    watchos_job_id="$TIER_B_WATCHOS_JOB_ID"
+    watchos_conclusion="$TIER_B_WATCHOS_CONCLUSION"
+    archive_job_id="$TIER_B_ARCHIVE_JOB_ID"
+    archive_conclusion="$TIER_B_ARCHIVE_CONCLUSION"
+    final_conclusion="$TIER_B_RUN_CONCLUSION"
 
-    # GitHub's run conclusion collapses exit 1 (FAIL) and exit 2 (BLOCKED)
-    # into the same `failure` value. Fetch the exact source-matched run's logs
-    # and require one correlation-bound status record from every Tier B job.
-    # Completed-job logs are eventually consistent: the run can be complete
-    # before every job log is available to `gh run view --log`. Refetch within
-    # a fixed window, always replacing (never accumulating) the evidence. A
-    # malformed or contradictory complete inventory remains BLOCKED when the
-    # window expires; only an exact complete verdict can end the loop early.
-    for evidence_attempt in $(seq 1 30); do
-        : >"$ART/tierb-full.log"
-        : >"$ART/tierb-full.stderr"
-        gh run view "$run_id" --repo "$TIER_B_REPOSITORY" --log \
-            >"$ART/tierb-full.log" 2>"$ART/tierb-full.stderr"
-        logs_rc=$?
-        if [ "$logs_rc" -eq 0 ] \
-            && [ -s "$ART/tierb-full.log" ] \
-            && [ ! -s "$ART/tierb-full.stderr" ]; then
+    # A combined log can omit a completed job for minutes. Fetch the three
+    # validated job IDs independently and require each file to contain exactly
+    # its own correlation-bound final record. Every retry replaces all evidence.
+    for evidence_attempt in $(seq 1 12); do
+        logs_ready=1
+        fetch_tier_b_job_log "$ios_job_id" ios || logs_ready=0
+        fetch_tier_b_job_log "$watchos_job_id" watchos || logs_ready=0
+        fetch_tier_b_job_log "$archive_job_id" archive || logs_ready=0
+        if [ "$logs_ready" -eq 1 ]; then
             python3 -B scripts/check_tier_b_status_log.py \
-                --log "$ART/tierb-full.log" \
+                --ios-log "$ART/tierb-ios.log" \
+                --ios-conclusion "$ios_conclusion" \
+                --watchos-log "$ART/tierb-watchos.log" \
+                --watchos-conclusion "$watchos_conclusion" \
+                --archive-log "$ART/tierb-archive.log" \
+                --archive-conclusion "$archive_conclusion" \
                 --correlation "$correlation_token" \
                 --conclusion "$final_conclusion" \
                 >"$ART/tierb-evidence.log" 2>&1
@@ -889,8 +1000,7 @@ tier_b() {
                 && [ "${#evidence_lines[@]}" -eq 1 ]; then
                 evidence_marker="${evidence_lines[0]}"
                 case "$evidence_rc:$evidence_marker" in
-                    "0:TIER B EVIDENCE PASS: "*|\
-                    "1:TIER B EVIDENCE FAIL: "*|\
+                    "0:TIER B EVIDENCE PASS: all three jobs reported PASS and the workflow run succeeded"|\
                     "2:TIER B EVIDENCE BLOCKED: at least one job reported BLOCKED and the workflow run failed")
                         evidence_ready=1
                         break
@@ -898,27 +1008,35 @@ tier_b() {
                 esac
             fi
         fi
-        if [ "$evidence_attempt" -lt 30 ]; then
+        if [ "$evidence_attempt" -lt 12 ]; then
             sleep 5
         fi
     done
     if [ "$evidence_ready" -ne 1 ]; then
-        record "B*" BLOCKED "complete source-bound Tier B job evidence did not become available within the bounded retry window"
+        record "B*" BLOCKED "complete source-bound per-job Tier B logs did not become available within the bounded retry window"
+        return
+    fi
+    # Re-fetch and revalidate the full attempt-1 snapshot after log acquisition.
+    # The exact marker must be unchanged, so a job/run drift cannot be mixed
+    # with previously downloaded logs.
+    capture_tier_b_snapshot \
+        "$run_id" "$head_sha" "$expected_title" "$watch_rc" \
+        "$snapshot_marker" post
+    snapshot_rc=$?
+    if [ "$snapshot_rc" -ne 0 ]; then
+        record "B*" BLOCKED "Tier B run or job evidence changed during log acquisition"
         return
     fi
     case "$evidence_rc:$evidence_marker" in
-        "0:TIER B EVIDENCE PASS: "*)
+        "0:TIER B EVIDENCE PASS: all three jobs reported PASS and the workflow run succeeded")
             if resolve_tier_b_g6 "$run_id"; then
                 record "TierB" PASS "run https://github.com/markschonfeld/Talaria/actions/runs/$run_id"
             else
                 record "B*" BLOCKED "successful Tier B run could not resolve exactly one deferred G6 row"
             fi
             ;;
-        "1:TIER B EVIDENCE FAIL: "*)
-            record "TierB" FAIL "run failed: https://github.com/markschonfeld/Talaria/actions/runs/$run_id (gh run view --log-failed)"
-            ;;
-        "2:TIER B EVIDENCE BLOCKED: "*)
-            record "TierB" BLOCKED "run evidence is incomplete or indeterminate: https://github.com/markschonfeld/Talaria/actions/runs/$run_id"
+        "2:TIER B EVIDENCE BLOCKED: at least one job reported BLOCKED and the workflow run failed")
+            record "TierB" BLOCKED "at least one job reported BLOCKED: https://github.com/markschonfeld/Talaria/actions/runs/$run_id"
             ;;
         *)
             record "B*" BLOCKED "Tier B evidence checker status and marker disagreed"

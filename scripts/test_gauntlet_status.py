@@ -5,6 +5,8 @@ import subprocess
 import tempfile
 import unittest
 
+from scripts import check_tier_b_run_snapshot as snapshot_checker
+
 
 REPO = Path(__file__).resolve().parent.parent
 HELPERS = REPO / "scripts" / "gauntlet_status.sh"
@@ -16,6 +18,11 @@ TOKEN = "talaria-" + "c" * 32
 OTHER_TOKEN = "talaria-" + "d" * 32
 TITLE = f"Talaria Tier B: {TOKEN}"
 OTHER_TITLE = f"Talaria Tier B: {OTHER_TOKEN}"
+SNAPSHOT_A = (
+    "TIER B SNAPSHOT PASS: ios=101/failure watchos=102/success "
+    "archive=103/failure conclusion=failure digest=" + "1" * 64
+)
+SNAPSHOT_B = SNAPSHOT_A[:-64] + "2" * 64
 
 
 class ShellClassifierTests(unittest.TestCase):
@@ -323,6 +330,165 @@ exit "$result"
             text=True,
         )
 
+    def fetch_job_log(
+        self,
+        job_key: str,
+        *,
+        job_id: str = "67890",
+        gh_rc: int = 0,
+        emit_output: bool = True,
+        emit_stderr: bool = False,
+    ) -> tuple[subprocess.CompletedProcess[str], str, str, str]:
+        source = GAUNTLET.read_text(encoding="utf-8")
+        fetcher = "fetch_tier_b_job_log() {" + source.split(
+            "fetch_tier_b_job_log() {", maxsplit=1
+        )[1].split("section()", maxsplit=1)[0]
+        artifact_parent = REPO / ".gauntlet"
+        artifact_parent.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="tierb-fetch-test-", dir=artifact_parent
+        ) as temporary:
+            artifact = Path(temporary)
+            script = fetcher + r'''
+ART="$1"
+TIER_B_REPOSITORY="markschonfeld/Talaria"
+MOCK_JOB_ID="$2"
+MOCK_JOB_KEY="$3"
+MOCK_RC="$4"
+MOCK_OUTPUT="$5"
+MOCK_STDERR="$6"
+gh() {
+    printf '%s\n' "$*" >"$ART/gh-arguments"
+    if [ "$MOCK_OUTPUT" = "1" ]; then
+        printf '%s\n' 'completed per-job runtime log'
+    fi
+    if [ "$MOCK_STDERR" = "1" ]; then
+        printf '%s\n' 'unexpected diagnostic' >&2
+    fi
+    return "$MOCK_RC"
+}
+printf '%s\n' 'stale output' >"$ART/tierb-$MOCK_JOB_KEY.log"
+printf '%s\n' 'stale stderr' >"$ART/tierb-$MOCK_JOB_KEY.log.stderr"
+fetch_tier_b_job_log "$MOCK_JOB_ID" "$MOCK_JOB_KEY"
+'''
+            result = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    script,
+                    "talaria-tierb-fetch-test",
+                    str(artifact),
+                    job_id,
+                    job_key,
+                    str(gh_rc),
+                    "1" if emit_output else "0",
+                    "1" if emit_stderr else "0",
+                ],
+                cwd=REPO,
+                capture_output=True,
+                text=True,
+            )
+            arguments_path = artifact / "gh-arguments"
+            output_path = artifact / f"tierb-{job_key}.log"
+            stderr_path = artifact / f"tierb-{job_key}.log.stderr"
+            arguments = (
+                arguments_path.read_text(encoding="utf-8").strip()
+                if arguments_path.is_file()
+                else ""
+            )
+            output = (
+                output_path.read_text(encoding="utf-8")
+                if output_path.is_file()
+                else ""
+            )
+            error = (
+                stderr_path.read_text(encoding="utf-8")
+                if stderr_path.is_file()
+                else ""
+            )
+            return result, arguments, output, error
+
+    def capture_snapshot(
+        self,
+        markers: tuple[str, ...],
+        *,
+        expected_marker: str = "",
+        snapshot_key: str = "post",
+    ) -> tuple[subprocess.CompletedProcess[str], str, str]:
+        source = GAUNTLET.read_text(encoding="utf-8")
+        capture = "capture_tier_b_snapshot() {" + source.split(
+            "capture_tier_b_snapshot() {", maxsplit=1
+        )[1].split("section()", maxsplit=1)[0]
+        artifact_parent = REPO / ".gauntlet"
+        artifact_parent.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="tierb-snapshot-capture-test-", dir=artifact_parent
+        ) as temporary:
+            artifact = Path(temporary)
+            for index, marker in enumerate(markers, start=1):
+                (artifact / f"marker-{index}").write_text(marker, encoding="utf-8")
+            script = capture + r'''
+ART="$1"
+TIER_B_REPOSITORY="markschonfeld/Talaria"
+EXPECTED_MARKER="$2"
+SNAPSHOT_KEY="$3"
+gh() {
+    count=0
+    if [ -f "$ART/call-count" ]; then
+        read -r count <"$ART/call-count"
+    fi
+    count=$((count + 1))
+    printf '%s\n' "$count" >"$ART/call-count"
+    printf '%s\n' '{}'
+}
+python3() {
+    read -r count <"$ART/call-count"
+    marker_path="$ART/marker-$count"
+    if [ ! -f "$marker_path" ]; then
+        printf '%s\n' 'TIER B SNAPSHOT BLOCKED: evidence is missing, malformed, unavailable, or contradictory' >&2
+        return 2
+    fi
+    marker="$(cat "$marker_path")"
+    if [ "$marker" = "BLOCKED" ]; then
+        printf '%s\n' 'TIER B SNAPSHOT BLOCKED: evidence is missing, malformed, unavailable, or contradictory' >&2
+        return 2
+    fi
+    printf '%s\n' "$marker"
+}
+sleep() { :; }
+TIER_B_SNAPSHOT_MARKER="stale-marker"
+TIER_B_IOS_JOB_ID="999"
+capture_tier_b_snapshot \
+    12345 \
+    aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
+    "Talaria Tier B: talaria-cccccccccccccccccccccccccccccccc" \
+    1 \
+    "$EXPECTED_MARKER" \
+    "$SNAPSHOT_KEY"
+capture_rc=$?
+call_count="$(cat "$ART/call-count" 2>/dev/null || true)"
+printf '%s\n%s\n%s\n' \
+    "$call_count" "$TIER_B_SNAPSHOT_MARKER" "$TIER_B_IOS_JOB_ID"
+exit "$capture_rc"
+'''
+            result = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    script,
+                    "talaria-tierb-snapshot-capture-test",
+                    str(artifact),
+                    expected_marker,
+                    snapshot_key,
+                ],
+                cwd=REPO,
+                capture_output=True,
+                text=True,
+            )
+            lines = result.stdout.splitlines()
+            self.assertEqual(len(lines), 3, result.stdout + result.stderr)
+            return result, lines[0], "|".join(lines[1:])
+
     def test_gauntlet_rejects_extra_or_unknown_arguments(self) -> None:
         script = GAUNTLET.read_text(encoding="utf-8")
         preflight = script.split("STATUS_HELPERS=", maxsplit=1)[0]
@@ -413,7 +579,11 @@ exit "$result"
 
     def test_every_tier_b_job_emits_one_fail_closed_status_record(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
-        self.assertEqual(workflow.count("- name: Emit Tier B job status"), 3)
+        self.assertEqual(
+            workflow.count(f"- name: {snapshot_checker.REPORTER_STEP}"), 3
+        )
+        for expected_name in snapshot_checker.EXPECTED_JOBS.values():
+            self.assertEqual(workflow.count(f"name: {expected_name}"), 1)
         self.assertEqual(
             workflow.count("TALARIA_STATUS_CORRELATION: ${{ inputs.correlation_token }}"),
             3,
@@ -443,55 +613,176 @@ exit "$result"
     def test_status_checker_failure_modes_run_before_dispatch_and_in_tier_b(self) -> None:
         script = GAUNTLET.read_text(encoding="utf-8")
         tier_b = script.split("tier_b() {", maxsplit=1)[1]
+        self.assertIn("scripts.test_check_tier_b_run_snapshot", tier_b)
         self.assertIn("scripts.test_check_tier_b_status_log", tier_b)
         workflow = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("scripts.test_check_tier_b_run_snapshot", workflow)
         self.assertIn("scripts.test_check_tier_b_status_log", workflow)
 
     def test_every_gh_operation_is_bound_to_the_verified_repository(self) -> None:
         script = GAUNTLET.read_text(encoding="utf-8")
         tier_b = script.split("tier_b() {", maxsplit=1)[1]
-        self.assertEqual(tier_b.count('--repo "$TIER_B_REPOSITORY"'), 5)
+        self.assertEqual(script.count('--repo "$TIER_B_REPOSITORY"'), 5)
         self.assertIn("talaria_classify_tier_b_repository", tier_b)
 
-    def test_exact_run_logs_are_checked_with_the_dispatch_correlation(self) -> None:
+    def test_exact_snapshot_and_job_logs_are_source_and_origin_bound(self) -> None:
         script = GAUNTLET.read_text(encoding="utf-8")
         tier_b = script.split("tier_b() {", maxsplit=1)[1]
-        self.assertIn('gh run view "$run_id" --repo "$TIER_B_REPOSITORY" --log', tier_b)
+        snapshot = script.split("capture_tier_b_snapshot() {", maxsplit=1)[1].split(
+            "section()", maxsplit=1
+        )[0]
+        fetcher = script.split("fetch_tier_b_job_log() {", maxsplit=1)[1].split(
+            "capture_tier_b_snapshot()", maxsplit=1
+        )[0]
+        self.assertIn('gh run view "$run_id"', snapshot)
+        self.assertIn('--repo "$TIER_B_REPOSITORY"', snapshot)
+        self.assertIn("--attempt 1", snapshot)
+        self.assertIn(
+            "--json attempt,status,conclusion,databaseId,headSha,displayTitle,url,jobs",
+            snapshot,
+        )
+        self.assertIn("scripts/check_tier_b_run_snapshot.py", snapshot)
+        self.assertIn('--expected-run-id "$run_id"', snapshot)
+        self.assertIn('--expected-head-sha "$head_sha"', snapshot)
+        self.assertIn('--expected-title "$expected_title"', snapshot)
+        self.assertIn('--expected-attempt 1', snapshot)
+        self.assertIn("fetch_tier_b_job_log", tier_b)
+        self.assertIn('gh run view --repo "$TIER_B_REPOSITORY"', fetcher)
+        self.assertIn('--job "$job_id" --log', fetcher)
+        self.assertNotIn('gh run view "$run_id"', fetcher)
         self.assertIn("scripts/check_tier_b_status_log.py", tier_b)
+        for argument in (
+            "--ios-log",
+            "--ios-conclusion",
+            "--watchos-log",
+            "--watchos-conclusion",
+            "--archive-log",
+            "--archive-conclusion",
+        ):
+            self.assertIn(argument, tier_b)
         self.assertIn('--correlation "$correlation_token"', tier_b)
         self.assertIn('--conclusion "$final_conclusion"', tier_b)
         self.assertIn('mapfile -t evidence_lines <"$ART/tierb-evidence.log"', tier_b)
-        for marker in (
-            "TIER B EVIDENCE PASS: ",
-            "TIER B EVIDENCE FAIL: ",
-            "TIER B EVIDENCE BLOCKED: ",
-        ):
-            self.assertIn(marker, tier_b)
+        self.assertIn(
+            "TIER B EVIDENCE PASS: all three jobs reported PASS and the workflow run succeeded",
+            tier_b,
+        )
+        self.assertIn(
+            "TIER B EVIDENCE BLOCKED: at least one job reported BLOCKED and the workflow run failed",
+            tier_b,
+        )
+        self.assertNotIn("TIER B EVIDENCE FAIL", tier_b)
+        self.assertNotIn("talaria_classify_tier_b_final", script)
+        self.assertNotIn("talaria_classify_tier_b_job_inventory", script)
 
-    def test_eventually_consistent_job_logs_use_bounded_fresh_retries(self) -> None:
+    def test_snapshot_and_per_job_logs_use_bounded_fresh_retries(self) -> None:
         script = GAUNTLET.read_text(encoding="utf-8")
+        snapshot = script.split("capture_tier_b_snapshot() {", maxsplit=1)[1].split(
+            "section()", maxsplit=1
+        )[0]
+        fetcher = script.split("fetch_tier_b_job_log() {", maxsplit=1)[1].split(
+            "capture_tier_b_snapshot()", maxsplit=1
+        )[0]
+        self.assertIn(': >"$output_path"', fetcher)
+        self.assertIn(': >"$stderr_path"', fetcher)
+        self.assertIn('[ ! -s "$stderr_path" ]', fetcher)
+        self.assertIn("ios|watchos|archive", fetcher)
+        self.assertIn("for snapshot_attempt in $(seq 1 12); do", snapshot)
+        self.assertIn('snapshot_path="$ART/tierb-$snapshot_key-snapshot.json"', snapshot)
+        self.assertIn('stderr_path="$ART/tierb-$snapshot_key-snapshot.stderr"', snapshot)
+        self.assertIn(
+            'verdict_path="$ART/tierb-$snapshot_key-snapshot-verdict.log"',
+            snapshot,
+        )
+        self.assertIn("pre|post", snapshot)
+        self.assertIn("digest=([0-9a-f]{64})", snapshot)
+        self.assertIn('if [ -n "$expected_marker" ]', snapshot)
+        self.assertIn('return 2', snapshot)
+        self.assertIn('[ "$snapshot_attempt" -lt 12 ]', snapshot)
+        self.assertIn("sleep 5", snapshot)
+
         tier_b = script.split("tier_b() {", maxsplit=1)[1]
-        retry = tier_b.split("for evidence_attempt in $(seq 1 30); do", maxsplit=1)[1]
-        retry = retry.split("if [ \"$evidence_ready\" -ne 1 ]", maxsplit=1)[0]
-        self.assertIn('gh run view "$run_id" --repo "$TIER_B_REPOSITORY" --log', retry)
-        self.assertIn(': >"$ART/tierb-full.log"', retry)
-        self.assertIn(': >"$ART/tierb-full.stderr"', retry)
-        self.assertIn("evidence_lines=()", retry)
-        self.assertIn('sleep 5', retry)
-        self.assertIn('[ "$evidence_attempt" -lt 30 ]', retry)
-        self.assertIn(
-            "TIER B EVIDENCE BLOCKED: at least one job reported BLOCKED "
-            "and the workflow run failed",
-            retry,
+        self.assertIn("for evidence_attempt in $(seq 1 12); do", tier_b)
+        self.assertEqual(tier_b.count("fetch_tier_b_job_log"), 3)
+        self.assertIn('[ "$evidence_attempt" -lt 12 ]', tier_b)
+        self.assertIn("sleep 5", tier_b)
+        self.assertEqual(tier_b.count("capture_tier_b_snapshot"), 2)
+        self.assertIn('"$snapshot_marker"', tier_b)
+        pre_index = tier_b.index('"$run_id" "$head_sha" "$expected_title" "$watch_rc" "" pre')
+        fetch_index = tier_b.index('fetch_tier_b_job_log "$ios_job_id" ios')
+        post_index = tier_b.index('"$snapshot_marker" post')
+        self.assertLess(pre_index, fetch_index)
+        self.assertLess(fetch_index, post_index)
+
+    def test_snapshot_capture_retries_unavailable_then_accepts_valid(self) -> None:
+        result, calls, state = self.capture_snapshot(
+            ("BLOCKED", SNAPSHOT_A), snapshot_key="pre"
         )
-        checker = (REPO / "scripts" / "check_tier_b_status_log.py").read_text(
-            encoding="utf-8"
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(calls, "2")
+        self.assertEqual(state, SNAPSHOT_A + "|101")
+
+    def test_validated_snapshot_drift_blocks_immediately_without_reappearance(self) -> None:
+        result, calls, state = self.capture_snapshot(
+            (SNAPSHOT_B, SNAPSHOT_A),
+            expected_marker=SNAPSHOT_A,
+            snapshot_key="post",
         )
-        self.assertIn(
-            '"at least one job reported BLOCKED and the workflow run failed"',
-            checker,
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertEqual(calls, "1")
+        self.assertEqual(state, "|")
+
+    def test_snapshot_capture_failure_clears_stale_globals(self) -> None:
+        result, calls, state = self.capture_snapshot(("BLOCKED",))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(calls, "12")
+        self.assertEqual(state, "|")
+
+        invalid, calls, state = self.capture_snapshot(
+            (SNAPSHOT_A,), snapshot_key="unexpected"
         )
-        self.assertIn("evidence_ready=1", retry)
+        self.assertNotEqual(invalid.returncode, 0)
+        self.assertEqual(calls, "")
+        self.assertEqual(state, "|")
+
+    def test_per_job_fetch_replaces_stale_files_and_uses_exact_endpoint(self) -> None:
+        for job_key in ("ios", "watchos", "archive"):
+            with self.subTest(job_key=job_key):
+                result, arguments, output, error = self.fetch_job_log(job_key)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(
+                    arguments,
+                    "run view --repo markschonfeld/Talaria --job 67890 --log",
+                )
+                self.assertEqual(output, "completed per-job runtime log\n")
+                self.assertEqual(error, "")
+
+    def test_per_job_fetch_blocks_on_cli_error_empty_output_or_stderr(self) -> None:
+        cases = (
+            {"gh_rc": 1},
+            {"emit_output": False},
+            {"emit_stderr": True},
+        )
+        for arguments in cases:
+            with self.subTest(arguments=arguments):
+                result, gh_arguments, _, _ = self.fetch_job_log("ios", **arguments)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(
+                    gh_arguments,
+                    "run view --repo markschonfeld/Talaria --job 67890 --log",
+                )
+
+    def test_per_job_fetch_rejects_unvalidated_identifiers_and_keys(self) -> None:
+        cases = (
+            {"job_key": "other"},
+            {"job_key": "ios", "job_id": "0"},
+            {"job_key": "ios", "job_id": "not-a-job"},
+        )
+        for arguments in cases:
+            with self.subTest(arguments=arguments):
+                result, gh_arguments, _, _ = self.fetch_job_log(**arguments)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(gh_arguments, "")
 
     def test_named_branch_passes(self) -> None:
         status, _, value, _ = self.classify(
@@ -729,111 +1020,6 @@ exit "$result"
         )
         self.assertEqual(status, "BLOCKED")
         self.assertIn("candidates", detail)
-
-    def test_completed_success_and_failure_envelopes_require_job_evidence(self) -> None:
-        success = self.classify(
-            "talaria_classify_tier_b_final",
-            "0",
-            f"completed|success|{SHA_A}|{TITLE}",
-            SHA_A,
-            TITLE,
-            "0",
-        )
-        failure = self.classify(
-            "talaria_classify_tier_b_final",
-            "0",
-            f"completed|failure|{SHA_A}|{TITLE}",
-            SHA_A,
-            TITLE,
-            "1",
-        )
-        self.assertEqual((success[0], success[3]), ("READY", "success"))
-        self.assertEqual((failure[0], failure[3]), ("READY", "failure"))
-        self.assertIn("job evidence required", failure[1])
-
-    def test_final_conclusion_must_agree_with_watch_exit_status(self) -> None:
-        cases = (
-            (f"completed|success|{SHA_A}|{TITLE}", "1"),
-            (f"completed|failure|{SHA_A}|{TITLE}", "0"),
-        )
-        for record, watch_rc in cases:
-            with self.subTest(record=record, watch_rc=watch_rc):
-                status, detail, _, _ = self.classify(
-                    "talaria_classify_tier_b_final",
-                    "0",
-                    record,
-                    SHA_A,
-                    TITLE,
-                    watch_rc,
-                )
-                self.assertEqual(status, "BLOCKED")
-                self.assertIn("disagreed", detail)
-
-    def test_final_view_error_or_malformed_record_blocks(self) -> None:
-        cases = (
-            ("1", f"completed|success|{SHA_A}|{TITLE}"),
-            ("0", "completed|success"),
-            ("0", f"completed|success|{SHA_A}|{TITLE}|extra"),
-        )
-        for view_rc, record in cases:
-            with self.subTest(view_rc=view_rc, record=record):
-                status, detail, _, _ = self.classify(
-                    "talaria_classify_tier_b_final",
-                    view_rc,
-                    record,
-                    SHA_A,
-                    TITLE,
-                    "1",
-                )
-                self.assertEqual(status, "BLOCKED")
-                self.assertIn("could not verify", detail)
-
-        status, detail, _, _ = self.classify(
-            "talaria_classify_tier_b_final",
-            "0",
-            f"completed|success|{SHA_A}|{TITLE}",
-            SHA_A,
-            TITLE,
-        )
-        self.assertEqual(status, "BLOCKED")
-        self.assertIn("could not verify", detail)
-
-    def test_final_sha_mismatch_blocks(self) -> None:
-        status, detail, _, _ = self.classify(
-            "talaria_classify_tier_b_final",
-            "0",
-            f"completed|success|{SHA_B}|{TITLE}",
-            SHA_A,
-            TITLE,
-            "0",
-        )
-        self.assertEqual(status, "BLOCKED")
-        self.assertIn("different commit", detail)
-
-    def test_final_correlation_title_mismatch_blocks(self) -> None:
-        status, detail, _, _ = self.classify(
-            "talaria_classify_tier_b_final",
-            "0",
-            f"completed|success|{SHA_A}|{OTHER_TITLE}",
-            SHA_A,
-            TITLE,
-            "0",
-        )
-        self.assertEqual(status, "BLOCKED")
-        self.assertIn("correlation title", detail)
-
-    def test_incomplete_or_indecisive_final_state_blocks(self) -> None:
-        records = (
-            f"in_progress||{SHA_A}|{TITLE}",
-            f"completed|cancelled|{SHA_A}|{TITLE}",
-        )
-        for record in records:
-            with self.subTest(record=record):
-                status, _, _, _ = self.classify(
-                    "talaria_classify_tier_b_final", "0", record, SHA_A, TITLE, "1"
-                )
-                self.assertEqual(status, "BLOCKED")
-
 
 if __name__ == "__main__":
     unittest.main()

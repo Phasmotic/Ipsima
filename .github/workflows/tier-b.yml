@@ -40,6 +40,7 @@ jobs:
         run: |
           python3 -B -m unittest \
             scripts.test_check_launch_metrics \
+            scripts.test_check_tier_b_run_snapshot \
             scripts.test_check_tier_b_status_log \
             scripts.test_check_xcode_log \
             scripts.test_check_xcresult_tests \

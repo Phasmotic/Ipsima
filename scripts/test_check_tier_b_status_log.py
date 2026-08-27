@@ -17,24 +17,8 @@ CORRELATION = "talaria-" + "0123456789abcdef0123456789abcdef"
 OTHER_CORRELATION = "talaria-" + "fedcba9876543210fedcba9876543210"
 
 
-def record(job: str, status: str, token: str = CORRELATION) -> str:
-    return f"{checker.RECORD_PREFIX}{token}|{job}|{status}"
-
-
-def complete_log(
-    ios: str = "PASS",
-    watchos: str = "PASS",
-    archive: str = "PASS",
-    *,
-    token: str = CORRELATION,
-) -> str:
-    return "\n".join(
-        (
-            record("ios", ios, token),
-            record("watchos", watchos, token),
-            record("archive", archive, token),
-        )
-    )
+def record(job: str, status: str, correlation: str = CORRELATION) -> str:
+    return f"{checker.RECORD_PREFIX}{correlation}|{job}|{status}"
 
 
 class TierBStatusLogTests(unittest.TestCase):
@@ -46,6 +30,11 @@ class TierBStatusLogTests(unittest.TestCase):
     def setUp(self) -> None:
         self.scratch = self.scratch_root / uuid.uuid4().hex
         self.scratch.mkdir()
+        self.paths = {
+            job: self.scratch / f"{job}.log" for job in checker.EXPECTED_JOBS
+        }
+        for job in checker.EXPECTED_JOBS:
+            self._write(job, record(job, "PASS"))
 
     def tearDown(self) -> None:
         shutil.rmtree(self.scratch, ignore_errors=True)
@@ -57,158 +46,206 @@ class TierBStatusLogTests(unittest.TestCase):
         except OSError:
             pass
 
-    def _invoke(
+    def _write(
         self,
+        job: str,
         text: str | None = None,
         *,
         raw: bytes | None = None,
-        token: str = CORRELATION,
+    ) -> None:
+        payload = raw if raw is not None else (text or "").encode("utf-8")
+        self.paths[job].write_bytes(payload)
+
+    def _argv(
+        self,
+        *,
+        paths: dict[str, Path] | None = None,
+        job_conclusions: dict[str, str] | None = None,
+        correlation: str = CORRELATION,
         conclusion: str = "success",
-        log_path: Path | None = None,
+    ) -> list[str]:
+        selected_paths = dict(self.paths if paths is None else paths)
+        conclusions = {job: "success" for job in checker.EXPECTED_JOBS}
+        if job_conclusions is not None:
+            conclusions.update(job_conclusions)
+        return [
+            "--ios-log",
+            str(selected_paths["ios"]),
+            "--ios-conclusion",
+            conclusions["ios"],
+            "--watchos-log",
+            str(selected_paths["watchos"]),
+            "--watchos-conclusion",
+            conclusions["watchos"],
+            "--archive-log",
+            str(selected_paths["archive"]),
+            "--archive-conclusion",
+            conclusions["archive"],
+            "--correlation",
+            correlation,
+            "--conclusion",
+            conclusion,
+        ]
+
+    def _invoke(
+        self,
+        *,
+        paths: dict[str, Path] | None = None,
+        job_conclusions: dict[str, str] | None = None,
+        correlation: str = CORRELATION,
+        conclusion: str = "success",
         argv: list[str] | None = None,
     ) -> tuple[int, str, str]:
-        if argv is None:
-            if log_path is None:
-                log_path = self.scratch / "tier-b.log"
-                payload = raw if raw is not None else (text or "").encode("utf-8")
-                log_path.write_bytes(payload)
-            argv = [
-                "--log",
-                str(log_path),
-                "--correlation",
-                token,
-                "--conclusion",
-                conclusion,
-            ]
+        arguments = (
+            self._argv(
+                paths=paths,
+                job_conclusions=job_conclusions,
+                correlation=correlation,
+                conclusion=conclusion,
+            )
+            if argv is None
+            else argv
+        )
         stdout = StringIO()
         stderr = StringIO()
         with redirect_stdout(stdout), redirect_stderr(stderr):
-            code = checker.main(argv)
+            code = checker.main(arguments)
         return code, stdout.getvalue(), stderr.getvalue()
 
-    def assert_verdict(
+    def assert_exact(
         self,
         invocation: tuple[int, str, str],
         code: int,
-        status: str,
-    ) -> str:
+        message: str,
+    ) -> None:
         actual_code, stdout, stderr = invocation
         self.assertEqual(actual_code, code, (stdout, stderr))
-        expected_stream = stdout if code == 0 else stderr
-        other_stream = stderr if code == 0 else stdout
-        self.assertEqual(other_stream, "")
-        lines = expected_stream.splitlines()
-        self.assertEqual(len(lines), 1, (stdout, stderr))
-        self.assertTrue(lines[0].startswith(f"TIER B EVIDENCE {status}: "))
-        self.assertNotIn(CORRELATION, stdout + stderr)
-        self.assertNotIn(OTHER_CORRELATION, stdout + stderr)
-        return lines[0]
+        if code == 0:
+            self.assertEqual(stdout, message + "\n")
+            self.assertEqual(stderr, "")
+        else:
+            self.assertEqual(stdout, "")
+            self.assertEqual(stderr, message + "\n")
+        combined = stdout + stderr
+        self.assertNotIn(CORRELATION, combined)
+        self.assertNotIn(OTHER_CORRELATION, combined)
+        self.assertNotIn(checker.RECORD_PREFIX, combined)
 
-    def assert_blocked(self, invocation: tuple[int, str, str]) -> str:
-        return self.assert_verdict(invocation, 2, "BLOCKED")
+    def assert_pass(self, invocation: tuple[int, str, str]) -> None:
+        self.assert_exact(invocation, 0, checker.PASS_MESSAGE)
 
-    def test_all_pass_with_successful_conclusion_passes(self) -> None:
-        self.assert_verdict(self._invoke(complete_log()), 0, "PASS")
+    def assert_decisive_blocked(self, invocation: tuple[int, str, str]) -> None:
+        self.assert_exact(invocation, 2, checker.DECISIVE_BLOCKED_MESSAGE)
 
-    def test_github_line_prefixes_crlf_noise_and_job_order_are_accepted(self) -> None:
-        text = "\r\n".join(
-            (
-                "unrelated GitHub runtime output",
-                "archive\tstep\t2026-01-01Z " + record("archive", "PASS"),
-                "ios\tstep\t2026-01-01Z " + record("ios", "PASS"),
-                "watch\tstep\t2026-01-01Z " + record("watchos", "PASS"),
-                "unrelated trailer",
+    def assert_generic_blocked(self, invocation: tuple[int, str, str]) -> None:
+        self.assert_exact(invocation, 2, checker.GENERIC_BLOCKED_MESSAGE)
+
+    def test_all_pass_with_matching_job_and_run_conclusions_passes(self) -> None:
+        self.assert_pass(self._invoke())
+
+    def test_each_blocked_job_and_all_blocked_are_decisive(self) -> None:
+        variants = (
+            frozenset({"ios"}),
+            frozenset({"watchos"}),
+            frozenset({"archive"}),
+            frozenset(checker.EXPECTED_JOBS),
+        )
+        for blocked_jobs in variants:
+            for job in checker.EXPECTED_JOBS:
+                status = "BLOCKED" if job in blocked_jobs else "PASS"
+                self._write(job, record(job, status))
+            job_conclusions = {
+                job: "failure" if job in blocked_jobs else "success"
+                for job in checker.EXPECTED_JOBS
+            }
+            with self.subTest(blocked_jobs=blocked_jobs):
+                self.assert_decisive_blocked(
+                    self._invoke(
+                        job_conclusions=job_conclusions,
+                        conclusion="failure",
+                    )
+                )
+
+    def test_github_prefixes_crlf_noise_and_separate_job_order_are_accepted(self) -> None:
+        for job in reversed(checker.EXPECTED_JOBS):
+            self._write(
+                job,
+                "\r\n".join(
+                    (
+                        "unrelated GitHub runtime output",
+                        f"{job}\tstep\t2026-01-01Z " + record(job, "PASS"),
+                        "unrelated trailer",
+                    )
+                ),
+            )
+        self.assert_pass(self._invoke())
+
+    def test_swapping_job_logs_is_rejected(self) -> None:
+        swapped = dict(self.paths)
+        swapped["ios"], swapped["watchos"] = swapped["watchos"], swapped["ios"]
+        self.assert_generic_blocked(self._invoke(paths=swapped))
+
+    def test_fail_status_is_rejected_in_every_job(self) -> None:
+        for target in checker.EXPECTED_JOBS:
+            for job in checker.EXPECTED_JOBS:
+                self._write(job, record(job, "FAIL" if job == target else "PASS"))
+            with self.subTest(job=target):
+                self.assert_generic_blocked(
+                    self._invoke(
+                        job_conclusions={target: "failure"},
+                        conclusion="failure",
+                    )
+                )
+
+    def test_job_status_and_conclusion_mismatches_are_generic(self) -> None:
+        variants = (
+            ("PASS", "failure"),
+            ("BLOCKED", "success"),
+            ("PASS", "cancelled"),
+            ("PASS", "Success"),
+            ("PASS", ""),
+        )
+        for status, job_conclusion in variants:
+            for job in checker.EXPECTED_JOBS:
+                self._write(job, record(job, "PASS"))
+            self._write("ios", record("ios", status))
+            top_conclusion = "failure" if status == "BLOCKED" else "success"
+            with self.subTest(status=status, job_conclusion=job_conclusion):
+                self.assert_generic_blocked(
+                    self._invoke(
+                        job_conclusions={"ios": job_conclusion},
+                        conclusion=top_conclusion,
+                    )
+                )
+
+    def test_top_level_conclusion_mismatches_are_generic(self) -> None:
+        self.assert_generic_blocked(self._invoke(conclusion="failure"))
+
+        self._write("ios", record("ios", "BLOCKED"))
+        self.assert_generic_blocked(
+            self._invoke(
+                job_conclusions={"ios": "failure"},
+                conclusion="success",
             )
         )
-        self.assert_verdict(self._invoke(text), 0, "PASS")
 
-    def test_each_job_fail_status_produces_fail(self) -> None:
-        for job in checker.EXPECTED_JOBS:
-            with self.subTest(job=job):
-                statuses = {key: "PASS" for key in checker.EXPECTED_JOBS}
-                statuses[job] = "FAIL"
-                text = complete_log(
-                    statuses["ios"], statuses["watchos"], statuses["archive"]
-                )
-                self.assert_verdict(
-                    self._invoke(text, conclusion="failure"), 1, "FAIL"
-                )
+        self._write("ios", record("ios", "PASS"))
+        for invalid in ("", "cancelled", "Success", " failure"):
+            with self.subTest(conclusion=invalid):
+                self.assert_generic_blocked(self._invoke(conclusion=invalid))
 
-    def test_multiple_fail_statuses_still_produce_fail(self) -> None:
-        text = complete_log("FAIL", "PASS", "FAIL")
-        self.assert_verdict(self._invoke(text, conclusion="failure"), 1, "FAIL")
-
-    def test_blocked_dominates_fail_and_pass(self) -> None:
+    def test_duplicate_and_conflicting_records_are_generic(self) -> None:
         variants = (
-            ("BLOCKED", "PASS", "PASS"),
-            ("FAIL", "BLOCKED", "PASS"),
-            ("FAIL", "FAIL", "BLOCKED"),
-            ("BLOCKED", "BLOCKED", "BLOCKED"),
+            record("ios", "PASS") + "\n" + record("ios", "PASS"),
+            record("ios", "PASS") + "\n" + record("ios", "BLOCKED"),
+            record("ios", "PASS") + "\n" + checker.RECORD_PREFIX,
         )
-        for statuses in variants:
-            with self.subTest(statuses=statuses):
-                self.assert_verdict(
-                    self._invoke(complete_log(*statuses), conclusion="failure"),
-                    2,
-                    "BLOCKED",
-                )
+        for text in variants:
+            self._write("ios", text)
+            with self.subTest(text=text):
+                self.assert_generic_blocked(self._invoke())
 
-    def test_conclusion_contradictions_block(self) -> None:
-        variants = (
-            (complete_log(), "failure"),
-            (complete_log("FAIL", "PASS", "PASS"), "success"),
-            (complete_log("BLOCKED", "PASS", "PASS"), "success"),
-        )
-        for text, conclusion in variants:
-            with self.subTest(conclusion=conclusion):
-                marker = self.assert_blocked(
-                    self._invoke(text, conclusion=conclusion)
-                )
-                self.assertIn("contradict", marker)
-
-    def test_invalid_expected_correlation_values_block_without_disclosure(self) -> None:
-        invalid_tokens = (
-            "",
-            "talaria-0123",
-            "talaria-0123456789abcdef0123456789abcdeg",
-            "Talaria-0123456789abcdef0123456789abcdef",
-            CORRELATION + "0",
-            " talaria-0123456789abcdef0123456789abcdef",
-        )
-        for invalid_token in invalid_tokens:
-            with self.subTest(token=invalid_token):
-                code, stdout, stderr = self._invoke(
-                    complete_log(), token=invalid_token
-                )
-                self.assertEqual(code, 2)
-                self.assertTrue(
-                    stderr.startswith("TIER B EVIDENCE BLOCKED: "), stderr
-                )
-                self.assertEqual(stdout, "")
-                if invalid_token:
-                    self.assertNotIn(invalid_token, stdout + stderr)
-
-    def test_mismatched_record_correlation_blocks_without_disclosure(self) -> None:
-        marker = self.assert_blocked(
-            self._invoke(complete_log(token=OTHER_CORRELATION))
-        )
-        self.assertNotIn("correlation", marker.lower())
-
-    def test_missing_extra_duplicate_and_unknown_jobs_block(self) -> None:
-        variants = {
-            "missing": "\n".join((record("ios", "PASS"), record("archive", "PASS"))),
-            "extra": complete_log() + "\n" + record("decoy", "PASS"),
-            "duplicate": complete_log() + "\n" + record("ios", "PASS"),
-            "unknown only": "\n".join(
-                (record("ios", "PASS"), record("watchos", "PASS"), record("phone", "PASS"))
-            ),
-            "empty": "unrelated output only",
-        }
-        for label, text in variants.items():
-            with self.subTest(case=label):
-                self.assert_blocked(self._invoke(text))
-
-    def test_every_prefix_bearing_line_must_be_exactly_valid(self) -> None:
+    def test_every_prefix_bearing_line_must_be_exact(self) -> None:
         malformed = (
             checker.RECORD_PREFIX,
             checker.RECORD_PREFIX + CORRELATION,
@@ -216,74 +253,88 @@ class TierBStatusLogTests(unittest.TestCase):
             checker.RECORD_PREFIX + f"{CORRELATION}|ios|PASS|extra",
             checker.RECORD_PREFIX + f"{CORRELATION}|ios|pass",
             checker.RECORD_PREFIX + f"{CORRELATION}|ios|UNKNOWN",
+            checker.RECORD_PREFIX + f"{CORRELATION}|phone|PASS",
             checker.RECORD_PREFIX + f"{CORRELATION}|ios |PASS",
             checker.RECORD_PREFIX + f"{CORRELATION}|ios|PASS ",
             checker.RECORD_PREFIX + f"{CORRELATION} |ios|PASS",
             checker.RECORD_PREFIX + f"{OTHER_CORRELATION}|ios|PASS",
+            checker.RECORD_PREFIX + "talaria-0123|ios|PASS",
             checker.RECORD_PREFIX
             + f"{CORRELATION}|ios|PASS"
             + checker.RECORD_PREFIX,
         )
         for bad_line in malformed:
+            self._write("ios", bad_line)
             with self.subTest(record=bad_line):
-                self.assert_blocked(self._invoke(complete_log() + "\n" + bad_line))
+                self.assert_generic_blocked(self._invoke())
 
-    def test_prefix_must_be_contiguous_and_record_must_consume_line_end(self) -> None:
-        split_prefix = "TALARIA_TIER_B_" + " JOB_STATUS|"
-        text = complete_log() + "\n" + split_prefix + f"{CORRELATION}|ios|FAIL"
-        self.assert_verdict(self._invoke(text), 0, "PASS")
-
-        trailing = complete_log().replace(
-            record("archive", "PASS"), record("archive", "PASS") + " trailing"
+    def test_empty_partial_noise_only_and_missing_record_are_generic(self) -> None:
+        variants = (
+            "",
+            "unrelated output only",
+            "TALARIA_TIER_B_JOB_",
+            "TALARIA_TIER_B_ JOB_STATUS|" + f"{CORRELATION}|ios|PASS",
         )
-        self.assert_blocked(self._invoke(trailing))
+        for text in variants:
+            self._write("ios", text)
+            with self.subTest(text=text):
+                self.assert_generic_blocked(self._invoke())
 
-    def test_malformed_record_token_blocks(self) -> None:
-        malformed_tokens = (
+    def test_invalid_or_mismatched_correlation_is_generic_and_never_disclosed(self) -> None:
+        invalid_values = (
+            "",
             "talaria-0123",
-            "talaria-0123456789ABCDEF0123456789ABCDEF",
+            "talaria-0123456789abcdef0123456789abcdeg",
+            "Talaria-0123456789abcdef0123456789abcdef",
             CORRELATION + "0",
+            " " + CORRELATION,
         )
-        for malformed_token in malformed_tokens:
-            with self.subTest(token=malformed_token):
-                text = complete_log().replace(
-                    record("ios", "PASS"), record("ios", "PASS", malformed_token)
-                )
-                self.assert_blocked(self._invoke(text))
+        for invalid in invalid_values:
+            with self.subTest(correlation=invalid):
+                self.assert_generic_blocked(self._invoke(correlation=invalid))
 
-    def test_invalid_conclusion_and_command_lines_block(self) -> None:
-        for conclusion in ("", "cancelled", "Success", " failure"):
-            with self.subTest(conclusion=conclusion):
-                self.assert_blocked(
-                    self._invoke(complete_log(), conclusion=conclusion)
-                )
-        self.assert_blocked(self._invoke(argv=[]))
-        self.assert_blocked(self._invoke(argv=["--unknown"]))
+        self._write("ios", record("ios", "PASS", OTHER_CORRELATION))
+        self.assert_generic_blocked(self._invoke())
 
-    def test_missing_directory_symlink_and_unreadable_log_block(self) -> None:
-        missing = self.scratch / "missing.log"
-        self.assert_blocked(self._invoke(log_path=missing))
+    def test_missing_unknown_duplicate_and_help_command_lines_are_generic(self) -> None:
+        self.assert_generic_blocked(self._invoke(argv=[]))
+        self.assert_generic_blocked(self._invoke(argv=["--unknown"]))
+        self.assert_generic_blocked(self._invoke(argv=["--help"]))
+
+        duplicated = self._argv() + ["--ios-log", str(self.paths["ios"])]
+        self.assert_generic_blocked(self._invoke(argv=duplicated))
+
+        equals_form = self._argv()
+        equals_form[0:2] = [f"--ios-log={self.paths['ios']}"]
+        self.assert_generic_blocked(self._invoke(argv=equals_form))
+
+    def test_missing_directory_symlink_and_unreadable_files_are_generic(self) -> None:
+        missing_paths = dict(self.paths)
+        missing_paths["ios"] = self.scratch / "missing.log"
+        self.assert_generic_blocked(self._invoke(paths=missing_paths))
 
         directory = self.scratch / "directory"
         directory.mkdir()
-        self.assert_blocked(self._invoke(log_path=directory))
+        directory_paths = dict(self.paths)
+        directory_paths["watchos"] = directory
+        self.assert_generic_blocked(self._invoke(paths=directory_paths))
 
-        regular = self.scratch / "regular.log"
-        regular.write_text(complete_log(), encoding="utf-8")
         with patch.object(Path, "lstat") as mocked_lstat:
             mocked_lstat.return_value.st_mode = stat.S_IFLNK
-            self.assert_blocked(self._invoke(log_path=regular))
+            self.assert_generic_blocked(self._invoke())
 
         with patch.object(Path, "read_bytes", side_effect=PermissionError):
-            self.assert_blocked(self._invoke(log_path=regular))
+            self.assert_generic_blocked(self._invoke())
 
-    def test_non_utf8_nul_and_exotic_line_terminator_records_block(self) -> None:
-        self.assert_blocked(self._invoke(raw=b"\xff"))
-        self.assert_blocked(self._invoke(raw=complete_log().encode() + b"\0"))
-        exotic = complete_log().replace(
-            record("ios", "PASS"), record("ios", "PASS") + "\u2028"
-        )
-        self.assert_blocked(self._invoke(exotic))
+    def test_non_utf8_nul_and_exotic_line_terminator_files_are_generic(self) -> None:
+        self._write("ios", raw=b"\xff")
+        self.assert_generic_blocked(self._invoke())
+
+        self._write("ios", raw=record("ios", "PASS").encode("utf-8") + b"\0")
+        self.assert_generic_blocked(self._invoke())
+
+        self._write("ios", record("ios", "PASS") + "\u2028")
+        self.assert_generic_blocked(self._invoke())
 
 
 if __name__ == "__main__":

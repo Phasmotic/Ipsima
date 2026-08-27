@@ -81,13 +81,22 @@ untracked.
 GitHub Actions reports every nonzero step exit as the same workflow conclusion, `failure`; that
 summary cannot distinguish a deterministic gate failure from missing or indeterminate evidence.
 Each of the three Tier B jobs therefore emits exactly one final status record bound to the
-dispatch correlation token. The local gauntlet retrieves the complete logs for the exact
-source-matched run and requires one valid record for each expected job. Missing, duplicate,
-malformed, mismatched, or contradictory records are `BLOCKED`.
+dispatch correlation token. At this repair checkpoint the workflow can legitimately emit only
+`PASS` or `BLOCKED`; `FAIL` is unreachable and is rejected as malformed evidence. A job whose
+earlier step failed emits `BLOCKED`, because its conclusion alone does not prove whether the
+underlying process returned a findings status or an operational status.
 
-The aggregate is deliberately conservative: `BLOCKED` dominates `FAIL`, which dominates `PASS`.
-At this repair checkpoint, a GitHub job whose earlier step failed emits `BLOCKED`, because the job
-conclusion alone does not prove whether the underlying process returned a findings status or an
-operational status. A successful run can pass only when all three correlation-bound records say
-`PASS` and the workflow conclusion agrees. Raw job logs and correlation tokens are local evidence;
-they are never copied into public audit text.
+The local gauntlet pins observation to attempt 1 of the unique source- and title-matched run. It
+validates a fresh JSON snapshot containing the run ID, commit, title, canonical repository/run
+URL, exact three-job inventory, canonical run/job URLs, job conclusions, and the successful final
+reporter step. Only the validated job IDs are used with GitHub's per-job log endpoint; the CLI's
+positional run argument is deliberately omitted there because it is not enforced when `--job` is
+present. Each downloaded log must contain exactly its own correlation-bound record, so combined
+logs and swapped job origins cannot certify the run.
+
+After the three logs produce a decisive aggregate, the complete attempt-1 snapshot is fetched and
+validated again and must yield the identical normalized job inventory. Any missing, duplicate,
+malformed, mismatched, drifting, stderr-bearing, or contradictory evidence is `BLOCKED`. A run can
+pass only when all three records say `PASS`, all three job conclusions are `success`, and the
+workflow conclusion agrees. Raw snapshots, job IDs, job logs, and correlation tokens are local
+evidence; they are never copied into public audit text.
