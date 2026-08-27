@@ -39,24 +39,6 @@ jobs:
       - name: Install pinned XcodeGen
         run: bash scripts/install_xcodegen.sh
 
-      - name: Verify formatter parity and lint (G4, authoritative)
-        run: |
-          set -euo pipefail
-          SWIFTFORMAT_ACTUAL="$(swiftformat --version)"
-          SWIFTLINT_ACTUAL="$(swiftlint version)"
-          [ "$SWIFTFORMAT_ACTUAL" = "0.62.1" ] || {
-            echo "::error::expected SwiftFormat 0.62.1; found ${SWIFTFORMAT_ACTUAL:-unknown}"
-            exit 1
-          }
-          [ "$SWIFTLINT_ACTUAL" = "0.65.0" ] || {
-            echo "::error::expected SwiftLint 0.65.0; found ${SWIFTLINT_ACTUAL:-unknown}"
-            exit 1
-          }
-          swiftformat --lint --quiet Packages/HermesKit App Tests 2>&1 \
-            | tee .gauntlet/g4-swiftformat.log
-          swiftlint --strict --quiet 2>&1 \
-            | tee .gauntlet/g4-swiftlint.log
-
       - name: Verify XcodeGen determinism and generate project (G6, authoritative)
         run: |
           set -euo pipefail
@@ -172,6 +154,26 @@ jobs:
           printf '%s\n' "$status" | tee .gauntlet/g11-status.txt
           printf '### %s\n' "$status" >> "$GITHUB_STEP_SUMMARY"
 
+      # G4 runs last during audit repair so its known Objective C red remains
+      # decisive without hiding G6-G12 diagnostic evidence earlier in this job.
+      - name: Verify formatter parity and lint (G4, authoritative)
+        run: |
+          set -euo pipefail
+          SWIFTFORMAT_ACTUAL="$(swiftformat --version)"
+          SWIFTLINT_ACTUAL="$(swiftlint version)"
+          [ "$SWIFTFORMAT_ACTUAL" = "0.62.1" ] || {
+            echo "::error::expected SwiftFormat 0.62.1; found ${SWIFTFORMAT_ACTUAL:-unknown}"
+            exit 1
+          }
+          [ "$SWIFTLINT_ACTUAL" = "0.65.0" ] || {
+            echo "::error::expected SwiftLint 0.65.0; found ${SWIFTLINT_ACTUAL:-unknown}"
+            exit 1
+          }
+          swiftformat --lint --quiet Packages/HermesKit App Tests 2>&1 \
+            | tee .gauntlet/g4-swiftformat.log
+          swiftlint --strict --quiet 2>&1 \
+            | tee .gauntlet/g4-swiftlint.log
+
   watchos:
     name: G9 · watch app + widgets + UI smoke
     runs-on: macos-26
@@ -272,7 +274,6 @@ jobs:
     name: G13 · unsigned archive links everything
     runs-on: macos-26
     timeout-minutes: 30
-    needs: [ios]
     steps:
       - uses: actions/checkout@v4
 

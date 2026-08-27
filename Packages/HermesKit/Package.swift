@@ -3,6 +3,10 @@ import PackageDescription
 
 let package = Package(
     name: "HermesKit",
+    platforms: [
+        .iOS("26.0"),
+        .watchOS("26.0"),
+    ],
     products: [
         .library(name: "HermesKit", targets: ["HermesKit"]),
     ],
