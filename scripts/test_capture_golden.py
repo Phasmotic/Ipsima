@@ -579,7 +579,7 @@ class RuntimeAndEnvironmentTests(BlockedAssertions):
                 runtime = capture.verify_runtime(root, expected_catalog)
             self.assertEqual(runtime.root, root.resolve())
             self.assertEqual(runtime.executable, binary.resolve())
-            self.assertEqual(runtime.python, python)
+            self.assertEqual(runtime.python, capture._launcher_path(python))
 
     def test_runtime_drift_dirty_tree_dotenv_and_ambiguous_executable_block(self) -> None:
         with tempfile.TemporaryDirectory(prefix="capture-runtime-block-test-") as temporary:
