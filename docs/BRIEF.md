@@ -65,16 +65,39 @@ The revised phases are:
 
 ### P1 — HermesKit
 
-P1 retains the codec, WebSocket and REST/SSE transports, domain models, reconnect and replay
-behavior, approval state machine, and `MockGateway`. It also owns two mobile transport
-requirements:
+P1 retains the codec, WebSocket and REST/SSE transports, domain models, reconnect, reattach, and
+best-effort gap recovery, approval state machine, and `MockGateway`. It also owns two mobile
+transport requirements:
 
 - A durable offline outbox queues user messages composed without connectivity and sends them on
-  reconnect. `replay_epoch` recovers a dropped stream; the outbox separately preserves a dropped
-  user intent.
+  reconnect. Best-effort gap recovery is separate from preserving a dropped user intent and
+  follows P1.4 below.
 - A TLS trust store implements trust on first use for self-signed homelab gateways: pin the
   certificate, display its fingerprint, and require explicit acceptance. Plain HTTP is not an
   escape hatch.
+
+#### P1.2 — Transport
+
+P1.2 implements the primary WebSocket transport, including native-provider ticket acquisition
+and the `gateway.ready` handshake, behind the raw `HermesTransport` boundary. The REST/SSE
+fallback follows as the next P1 objective, before event routing and domain models. Its route,
+authentication, listener, readiness, and framing semantics differ from WebSocket; it must gain an
+honest capability or operation seam rather than fabricating JSON-RPC envelopes to look identical.
+
+#### P1.4 — Reconnect, reattach, and best-effort gap recovery
+
+These design rules are binding:
+
+- Transcript reconciliation through `session.history`, or the corresponding
+  `session.resume`/`session.activate` reconciliation path, is authoritative.
+- The replay ring is only an optimisation for transient gaps on a corroborated, reused live
+  session ID. It is never a source of truth.
+- Any ambiguity forces full transcript reconciliation. In particular, `latest_seq: 0` with
+  `truncated: false` is **UNKNOWN**, never proof of “no events”: an absent or evicted ring and a
+  session with no sequenced events are indistinguishable.
+- Sequence numbers alone do not establish continuity. `seq: 1` can recur after process restart
+  or replay-ring eviction; corroborate continuity against authoritative session state before
+  trusting replay.
 
 ### P2 — Connection and first run
 

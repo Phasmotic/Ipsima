@@ -119,6 +119,29 @@ client itself marks the transport open before it later processes `gateway.ready`
 (`apps/shared/src/json-rpc-gateway.ts:198-265,448-458`); waiting for readiness is Talaria's planned
 handshake policy, not an upstream client requirement.
 
+P1.2 fixes that Talaria-owned policy as follows:
+
+- `connect()` completes only after one text frame decodes as JSON-RPC 2.0 method `event`, with no
+  identifier, result, error, or session ID, and with `params.type: "gateway.ready"` plus an object
+  payload. Socket opening alone is never ready; a binary, malformed, bare, sessionful, or different
+  first frame closes the attempt.
+- The readiness deadline is a positive configurable duration, defaulting to ten seconds. Expiry or
+  cancellation closes the underlying socket and leaves the transport disconnected. Every later
+  `connect()` remints a ticket; no failed attempt reuses one.
+- The primary client uses the official `?ticket=` WebSocket form and never sends the legacy
+  `token` or server-child `internal` credential. Errors are mapped to bounded categories before
+  leaving the transport so a bearer value, ticket-bearing URL, or response body cannot escape.
+- After readiness, the transport preserves one-message-per-text-frame ordering and permits one
+  pending receive. It does not correlate request IDs or unwrap events; those are P1.3 routing
+  responsibilities.
+
+The Apple implementation uses `URLSessionWebSocketTask`. Swift 6.3.3 exposes the same API through
+FoundationNetworking on the pinned Linux environment, but that environment's libcurl was built
+without WebSocket support and fails at runtime. Linux therefore exercises the production ticket,
+handshake, framing, and lifecycle actor through the injected package `MockGateway`; it does not
+claim live URLSession WebSocket I/O. Adding a second networking stack solely for Linux tests is
+outside this objective.
+
 Current loopback mode uses the legacy process-scoped `?token=` compatibility credential. On a
 public bind, gated mode rejects that token; the legacy `--insecure` flag no longer disables
 public-bind authentication (`hermes_cli/web_server.py:529-551,703-741,16313-16423,19395-19416`).
@@ -204,6 +227,8 @@ retained sequence is greater than `last_seen + 1`. An unknown or evicted ring re
 array, `latest_seq: 0`, and `truncated: false`, so it is indistinguishable from a known session
 that has never emitted a sequenced event.
 
+### Deferred upstream contribution candidate: TypeScript replay envelope mismatch
+
 The pinned source contains a real producer/consumer disagreement. The server stores and returns
 complete envelopes (`tui_gateway/event_replay.py:36-68`), but the shared TypeScript client expects
 bare `{type,session_id,seq,payload}` values and skips a real envelope because it has no top-level
@@ -211,6 +236,10 @@ bare `{type,session_id,seq,payload}` values and skips a real envelope because it
 `apps/shared/src/json-rpc-gateway-replay.test.ts:131-146`. Server output is authoritative for
 Talaria; a later decoder may deliberately accept both shapes for compatibility, but must not copy
 the bare-only assumption.
+
+Candidate contribution: align the consumer and test with server output, optionally accepting the
+bare shape defensively for compatibility. This is a repository record only; do not open an
+upstream artifact before the post-P3 contribution review and separate authorization.
 
 Reconnect requires several distinct operations, but the pinned source establishes no lossless
 ordering or barrier among them:

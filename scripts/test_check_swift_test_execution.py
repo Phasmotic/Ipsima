@@ -13,10 +13,20 @@ from scripts import check_swift_test_execution as checker
 
 REQUEST_TEST = "testM_SessionTitle"
 EVENT_TEST = "testE_SessionTitle"
-MANUAL_TESTS = tuple(
-    sorted(test_id.rsplit("/", 1)[1] for test_id in checker.EXPECTED_HANDWRITTEN_TESTS)
-)
+MANUAL_TEST_IDS = tuple(sorted(checker.EXPECTED_HANDWRITTEN_TESTS))
+MANUAL_TESTS = tuple(test_id.rsplit("/", 1)[1] for test_id in MANUAL_TEST_IDS)
 TOTAL_TESTS = 2 + len(MANUAL_TESTS)
+
+
+def manual_suites() -> list[dict[str, object]]:
+    grouped: dict[str, list[str]] = {}
+    for test_id in MANUAL_TEST_IDS:
+        suite, name = test_id.rsplit("/", 1)
+        grouped.setdefault(suite, []).append(name)
+    return [
+        {"name": suite, "tests": [{"name": name} for name in sorted(names)]}
+        for suite, names in sorted(grouped.items())
+    ]
 
 
 def valid_catalog() -> dict[str, object]:
@@ -41,10 +51,7 @@ def valid_discovery() -> dict[str, object]:
                             {"name": EVENT_TEST},
                         ],
                     },
-                    {
-                        "name": "HermesKitTests.WireCodecTests",
-                        "tests": [{"name": name} for name in MANUAL_TESTS],
-                    },
+                    *manual_suites(),
                 ],
             }
         ],
@@ -59,7 +66,11 @@ def runtime_names() -> list[str]:
     return [
         f"ProtocolConformanceTests.{REQUEST_TEST}",
         f"ProtocolConformanceTests.{EVENT_TEST}",
-        *(f"WireCodecTests.{name}" for name in MANUAL_TESTS),
+        *(
+            f"{suite.rsplit('.', 1)[1]}.{name}"
+            for test_id in MANUAL_TEST_IDS
+            for suite, name in [test_id.rsplit("/", 1)]
+        ),
     ]
 
 
