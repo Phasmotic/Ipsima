@@ -135,9 +135,12 @@ class G12ContractTests(unittest.TestCase):
         study_start = workflow.index("Run interleaved transport-link A/B diagnostic")
         study_upload = workflow.index("Upload sanitized transport-link A/B evidence")
         structure = workflow.index("Collect deterministic launch-structure replacement evidence")
+        study = workflow[study_start:study_upload]
         self.assertLess(observation_upload, study_start)
         self.assertLess(study_start, study_upload)
         self.assertLess(study_upload, structure)
+        self.assertIn('--success-marker "** TEST EXECUTE SUCCEEDED **"', study)
+        self.assertNotIn('--success-marker "** TEST SUCCEEDED **"', study)
 
     def test_rearm_contract_is_complete_and_blocks_p2_closure(self) -> None:
         for path in (BRIEF, GOVERNANCE):

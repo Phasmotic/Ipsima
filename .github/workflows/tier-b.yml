@@ -377,7 +377,7 @@ jobs:
               || ab_blocked "pair $pair $variant test failed"
             python3 -B scripts/check_xcode_log.py \
               --log "$log" \
-              --success-marker "** TEST SUCCEEDED **"
+              --success-marker "** TEST EXECUTE SUCCEEDED **"
             metrics=".gauntlet/g12-ab/evidence/pair-$pair-$variant.json"
             metrics_stderr="$metrics.stderr"
             xcrun xcresulttool get test-results metrics \
