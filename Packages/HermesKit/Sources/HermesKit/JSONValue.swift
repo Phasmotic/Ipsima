@@ -1,5 +1,7 @@
 import Foundation
 
+#warning("TALARIA_INVERTED_GATE_PROOF_COMPILER_WARNING")
+
 // JSON value model for the Hermes wire protocol.
 //
 // Numbers decode to integers where possible so canonical re-encoding stays
