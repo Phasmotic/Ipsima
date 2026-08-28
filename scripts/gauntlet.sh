@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 #
-# Talaria gauntlet — Tier A (local, native Linux tools in WSL Ubuntu).
+# Talaria gauntlet — native Linux gates.
 #
-# Supported entry path (PowerShell only):
+# Supported local entry path (PowerShell only):
 #   pwsh -File scripts/gauntlet.ps1             run every Tier A gate
 #   pwsh -File scripts/gauntlet.ps1 -TierB      additionally dispatch + follow macOS CI
+# Supported CI entry path (pinned reusable workflow only):
+#   bash scripts/gauntlet.sh --github-pr        run advisory G1-G5 on GitHub-hosted Linux
 #
 # The PowerShell launcher enters Ubuntu through wsl.exe and marks that namespace.
 # Do not enter through an Ubuntu shortcut or Git Bash: this machine can assign those
@@ -31,6 +33,7 @@ mkdir -p "$ART"
 EXPECTED_ENTRY="powershell-wsl"
 EXPECTED_NAMESPACE="pwsh-wsl-ubuntu-swift-6.3.3"
 EXPECTED_SWIFT_LINE="Swift version 6.3.3 (swift-6.3.3-RELEASE)"
+EXPECTED_SWIFT_TARGET="x86_64-unknown-"linux-gnu
 EXPECTED_GH_RUN_LINE="gh version 2.45.0 (2025-07-18 Ubuntu 2.45.0-1ubuntu0.3)"
 EXPECTED_GH_LOG_LINE="gh version 2.88.1 (2026-03-12)"
 SWIFTFORMAT_VERSION="0.62.1"
@@ -57,12 +60,14 @@ blocked_preflight() {
 }
 
 RUN_TIER_B=0
+RUN_GITHUB_PR=0
 if [ "$#" -gt 1 ]; then
     blocked_preflight "expected at most one gauntlet argument"
 fi
 case "${1:-}" in
     "") ;;
     --tier-b) RUN_TIER_B=1 ;;
+    --github-pr) RUN_GITHUB_PR=1 ;;
     *) blocked_preflight "unknown gauntlet argument: $1" ;;
 esac
 
@@ -73,20 +78,71 @@ STATUS_HELPERS="$ROOT/scripts/gauntlet_status.sh"
 source "$STATUS_HELPERS" \
     || blocked_preflight "gate status classifiers could not be loaded"
 
-[ "${TALARIA_GAUNTLET_ENTRY:-}" = "$EXPECTED_ENTRY" ] \
-    || blocked_preflight "launch with pwsh -File scripts/gauntlet.ps1"
-[ "${TALARIA_GAUNTLET_NAMESPACE:-}" = "$EXPECTED_NAMESPACE" ] \
-    || blocked_preflight "unexpected WSL launcher namespace"
-[ -n "${WSL_INTEROP:-}" ] \
-    || blocked_preflight "Tier A requires PowerShell-launched WSL"
-[ "${WSL_DISTRO_NAME:-}" = "Ubuntu" ] \
-    || blocked_preflight "Tier A requires the Ubuntu WSL distro"
-grep -qi microsoft /proc/sys/kernel/osrelease 2>/dev/null \
-    || blocked_preflight "Tier A is not running inside WSL"
+G1_ENVIRONMENT_LINE=""
+G1_ENTRY_LINE=""
+if [ "$RUN_GITHUB_PR" -eq 1 ]; then
+    command -v git >/dev/null 2>&1 \
+        || blocked_preflight "git is required to bind the pull-request source"
+    command -v python3 >/dev/null 2>&1 \
+        || blocked_preflight "python3 is required to inspect the hosted Linux environment"
+    github_head_rc=0
+    github_head_sha="$(git rev-parse HEAD 2>"$ART/github-pr-head.stderr")" \
+        || github_head_rc=$?
+    github_head_stderr_state="empty"
+    if [ -s "$ART/github-pr-head.stderr" ]; then
+        github_head_stderr_state="nonempty"
+    fi
+    os_id="$(sed -n 's/^ID=//p' /etc/os-release 2>/dev/null)"
+    os_id="${os_id#\"}"
+    os_id="${os_id%\"}"
+    os_version="$(sed -n 's/^VERSION_ID=//p' /etc/os-release 2>/dev/null)"
+    os_version="${os_version#\"}"
+    os_version="${os_version%\"}"
+    kernel_release="$(uname -r 2>/dev/null || true)"
+    machine="$(uname -m 2>/dev/null || true)"
+    wsl_state="absent"
+    if [ -n "${WSL_INTEROP:-}" ] || [ -n "${WSL_DISTRO_NAME:-}" ]; then
+        wsl_state="present"
+    fi
+    talaria_classify_github_pr_entry \
+        "${GITHUB_ACTIONS:-}" \
+        "${GITHUB_EVENT_NAME:-}" \
+        "${RUNNER_ENVIRONMENT:-}" \
+        "${RUNNER_OS:-}" \
+        "${RUNNER_ARCH:-}" \
+        "${GITHUB_REPOSITORY:-}" \
+        "${GITHUB_REF:-}" \
+        "${GITHUB_SHA:-}" \
+        "$github_head_rc" \
+        "$github_head_sha" \
+        "$github_head_stderr_state" \
+        "$os_id" \
+        "$os_version" \
+        "$kernel_release" \
+        "$machine" \
+        "$wsl_state"
+    [ "$TALARIA_CLASS_STATUS" = "PASS" ] \
+        || blocked_preflight "$TALARIA_CLASS_DETAIL"
+    G1_ENVIRONMENT_LINE="GitHub-hosted Ubuntu 24.04 x64 toolchain: verified"
+    G1_ENTRY_LINE="pull_request merge checkout: verified"
+else
+    [ "${TALARIA_GAUNTLET_ENTRY:-}" = "$EXPECTED_ENTRY" ] \
+        || blocked_preflight "launch with pwsh -File scripts/gauntlet.ps1"
+    [ "${TALARIA_GAUNTLET_NAMESPACE:-}" = "$EXPECTED_NAMESPACE" ] \
+        || blocked_preflight "unexpected WSL launcher namespace"
+    [ -n "${WSL_INTEROP:-}" ] \
+        || blocked_preflight "Tier A requires PowerShell-launched WSL"
+    [ "${WSL_DISTRO_NAME:-}" = "Ubuntu" ] \
+        || blocked_preflight "Tier A requires the Ubuntu WSL distro"
+    grep -qi microsoft /proc/sys/kernel/osrelease 2>/dev/null \
+        || blocked_preflight "Tier A is not running inside WSL"
+    G1_ENVIRONMENT_LINE="native WSL toolchain: verified"
+    G1_ENTRY_LINE="PowerShell launcher namespace marker: verified"
+fi
 
 # Swiftly installs user-local proxies. Add only its documented bin directory;
 # never inherit a Windows Swift executable through WSL interop.
-if [ -d "$HOME/.local/share/swiftly/bin" ]; then
+if [ "$RUN_GITHUB_PR" -eq 0 ] && [ -d "$HOME/.local/share/swiftly/bin" ]; then
     PATH="$HOME/.local/share/swiftly/bin:$PATH"
     export PATH
 fi
@@ -112,6 +168,11 @@ fi
 SWIFT_RESOURCE_PATH="$(printf '%s\n' "$SWIFT_TARGET_INFO" \
     | python3 -c 'import json, sys; print(json.load(sys.stdin)["paths"]["runtimeResourcePath"])' \
         2>/dev/null || true)"
+SWIFT_TARGET_TRIPLE="$(printf '%s\n' "$SWIFT_TARGET_INFO" \
+    | python3 -c 'import json, sys; print(json.load(sys.stdin)["target"]["triple"])' \
+        2>/dev/null || true)"
+[ "$SWIFT_TARGET_TRIPLE" = "$EXPECTED_SWIFT_TARGET" ] \
+    || blocked_preflight "expected Swift target $EXPECTED_SWIFT_TARGET"
 [ -n "$SWIFT_RESOURCE_PATH" ] \
     || blocked_preflight "could not resolve the pinned Swift runtime resource path"
 TOOLCHAIN_USR="$(cd "$SWIFT_RESOURCE_PATH/../.." 2>/dev/null && pwd -P)"
@@ -353,16 +414,20 @@ section() { printf '\n=== %s ===\n' "$1"; }
 g1() {
     section "G1 · swift build (debug + release, warnings-as-errors)"
     local debug_rc release_rc warning_rc
-    python3 -B -m unittest scripts.test_check_xcode_log \
-        >"$ART/g1-warning-selftest.log" 2>&1
+    python3 -B -m unittest \
+        scripts.test_check_xcode_log \
+        scripts.test_gauntlet_status.GitHubPRModeTests \
+        scripts.test_gauntlet_status.GitHubPRCoreWorkflowTests \
+        >"$ART/g1-selftest.log" 2>&1
     if [ $? -ne 0 ]; then
-        record G1 BLOCKED "warning-log checker self-tests failed (see .gauntlet/g1-warning-selftest.log)"
+        record G1 BLOCKED "G1 and Linux workflow self-tests failed (see .gauntlet/g1-selftest.log)"
         return
     fi
     {
         printf '%s\n' "$SWIFT_VERSION_LINE"
-        echo "native WSL toolchain: verified"
-        echo "PowerShell launcher namespace marker: verified"
+        printf '%s\n' "$G1_ENVIRONMENT_LINE"
+        printf '%s\n' "$G1_ENTRY_LINE"
+        printf 'Swift target: %s\n' "$SWIFT_TARGET_TRIPLE"
         echo "--- debug ---"
         swift build --package-path "$KIT" -c debug -Xswiftc -warnings-as-errors
         debug_rc=$?
@@ -429,7 +494,7 @@ g2() {
     profile_data="$g2_temp/g2.profdata"
     if [ -z "$g2_temp" ] || [ ! -d "$g2_temp" ] || ! mkdir -p "$g2_scratch"; then
         g2_cleanup_after_setup_failure "$g2_temp"
-        record G2 BLOCKED "could not create a native WSL coverage scratch directory"
+        record G2 BLOCKED "could not create a Linux coverage scratch directory"
         return
     fi
 
@@ -820,6 +885,7 @@ g4() {
 g5() {
     section "G5 · secret scan + hardcoded-host grep"
     local prerequisite archive part actual version_rc history_rc worktree_rc literal_rc
+    local shallow_rc shallow_state shallow_stderr_state
     local gl_bin="$TOOLS/gitleaks-$GITLEAKS_VERSION"
     if ! python3 -B -m unittest \
         scripts.test_gauntlet_status.G5ClassificationTests \
@@ -828,6 +894,22 @@ g5() {
         record G5 BLOCKED "G5 result-classifier self-tests failed (see .gauntlet/g5-wrapper-selftest.log)"
         return
     fi
+    : >"$ART/g5-history-shape.stderr"
+    shallow_rc=0
+    shallow_state="$(git rev-parse --is-shallow-repository \
+        2>"$ART/g5-history-shape.stderr")" || shallow_rc=$?
+    shallow_stderr_state="empty"
+    if [ -s "$ART/g5-history-shape.stderr" ]; then
+        shallow_stderr_state="nonempty"
+    fi
+    talaria_classify_complete_git_history \
+        "$shallow_rc" "$shallow_state" "$shallow_stderr_state"
+    if [ "$TALARIA_CLASS_STATUS" != "PASS" ]; then
+        record G5 BLOCKED "$TALARIA_CLASS_DETAIL"
+        return
+    fi
+    printf 'git rev-parse --is-shallow-repository: %s\n' "$shallow_state" \
+        >"$ART/g5-history-shape.log"
     mkdir -p "$TOOLS"
     : >"$ART/g5-onboard.log"
     for prerequisite in curl sha256sum tar; do
@@ -1129,7 +1211,11 @@ tier_b() {
 }
 
 # ---- main -------------------------------------------------------------------------
-g1; g2; g3; g4; g5; g6
+g1; g2; g3; g4; g5
+
+if [ "$RUN_GITHUB_PR" -eq 0 ]; then
+    g6
+fi
 
 if [ "$RUN_TIER_B" -eq 1 ]; then
     if [ "$FAILED" -eq 1 ]; then
@@ -1147,7 +1233,15 @@ for row in "${RESULTS[@]}"; do
 done
 echo
 printf '%.0s-' {1..100}; echo
-if [ "$FAILED" -eq 0 ]; then
+if [ "$RUN_GITHUB_PR" -eq 1 ]; then
+    talaria_classify_g1_g5_inventory "${RESULTS[@]}"
+    if [ "$FAILED" -eq 0 ] && [ "$TALARIA_CLASS_STATUS" = "PASS" ]; then
+        echo "G1–G5 GREEN"
+        exit 0
+    fi
+    echo "G1–G5 RED — failures remain visible."
+    exit 1
+elif [ "$FAILED" -eq 0 ]; then
     if [ "$RUN_TIER_B" -eq 1 ]; then
         echo "GAUNTLET GREEN"
     else

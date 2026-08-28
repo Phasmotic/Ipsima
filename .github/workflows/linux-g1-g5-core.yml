@@ -1,0 +1,93 @@
+name: linux-g1-g5-core
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    name: G1–G5 · Ubuntu 24.04 · Swift 6.3.3
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the nominated pull-request source
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # This step belongs to the SHA-pinned workflow, not the candidate tree.
+      # It must complete before any repository script is executed.
+      - name: Prove hosted source, complete history, and exact toolchain
+        shell: bash
+        env:
+          TALARIA_RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+
+          [ "$GITHUB_ACTIONS" = "true" ]
+          [ "$GITHUB_EVENT_NAME" = "pull_request" ]
+          [ "$RUNNER_ENVIRONMENT" = "github-hosted" ]
+          [ "$TALARIA_RUNNER_ENVIRONMENT" = "github-hosted" ]
+          [ "$RUNNER_OS" = "Linux" ]
+          [ "$RUNNER_ARCH" = "X64" ]
+          [ "$GITHUB_REPOSITORY" = "markschonfeld/Talaria" ]
+          [[ "$GITHUB_REF" =~ ^refs/pull/[1-9][0-9]*/merge$ ]]
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [ -r /proc/sys/kernel/osrelease ]
+          ! grep -qi microsoft /proc/sys/kernel/osrelease
+          [ -z "${WSL_INTEROP:-}" ]
+          [ -z "${WSL_DISTRO_NAME:-}" ]
+          [ "$(uname -m)" = "x86_64" ]
+
+          os_id="$(sed -n 's/^ID=//p' /etc/os-release)"
+          os_id="${os_id#\"}"
+          os_id="${os_id%\"}"
+          os_version="$(sed -n 's/^VERSION_ID=//p' /etc/os-release)"
+          os_version="${os_version#\"}"
+          os_version="${os_version%\"}"
+          [ "$os_id" = "ubuntu" ]
+          [ "$os_version" = "24.04" ]
+
+          head_sha="$(git rev-parse HEAD)"
+          [ -n "$head_sha" ]
+          [ "$head_sha" = "$GITHUB_SHA" ]
+          shallow_state="$(git rev-parse --is-shallow-repository)"
+          [ -n "$shallow_state" ]
+          [ "$shallow_state" = "false" ]
+
+          swift_bin="$(command -v swift)"
+          [ -n "$swift_bin" ]
+          case "$swift_bin" in
+            /mnt/*|*.exe) exit 1 ;;
+          esac
+          swift_version="$(swift --version)"
+          [ -n "$swift_version" ]
+          [ "$(printf '%s\n' "$swift_version" | sed -n '1p')" = \
+            "Swift version 6.3.3 (swift-6.3.3-RELEASE)" ]
+          swift_target_info="$(swift -print-target-info)"
+          [ -n "$swift_target_info" ]
+          swift_facts="$(printf '%s\n' "$swift_target_info" | python3 -c \
+            'import json, sys; value = json.load(sys.stdin); print(value["target"]["triple"]); print(value["paths"]["runtimeResourcePath"])')"
+          mapfile -t swift_fact_lines <<<"$swift_facts"
+          [ "${#swift_fact_lines[@]}" -eq 2 ]
+          [ "${swift_fact_lines[0]}" = "x86_64-unknown-linux-gnu" ]
+          runtime_resource_path="${swift_fact_lines[1]}"
+          [ -n "$runtime_resource_path" ]
+          toolchain_usr="$(cd "$runtime_resource_path/../.." && pwd -P)"
+          [ -x "$toolchain_usr/bin/llvm-cov" ]
+          [ -x "$toolchain_usr/bin/llvm-profdata" ]
+          [ -f "$toolchain_usr/lib/libsourcekitdInProc.so" ]
+
+      - name: Run advisory G1–G5
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/gauntlet.sh --github-pr | tee .gauntlet/pr-g1-g5.log
+          mapfile -t green_markers < <(grep -Fx 'G1–G5 GREEN' .gauntlet/pr-g1-g5.log)
+          [ "${#green_markers[@]}" -eq 1 ]
+          ! grep -Eq '^(TIER A GREEN|GAUNTLET GREEN)$' .gauntlet/pr-g1-g5.log

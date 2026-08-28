@@ -16,6 +16,7 @@ LAUNCHER = REPO / "scripts" / "gauntlet.ps1"
 LAUNCHER_HELPERS = REPO / "scripts" / "gauntlet_launcher_helpers.ps1"
 LAUNCHER_TEST = REPO / "scripts" / "test_gauntlet_launcher.ps1"
 WORKFLOW = REPO / ".github" / "workflows" / "tier-b.yml"
+LINUX_CORE_WORKFLOW = REPO / ".github" / "workflows" / "linux-g1-g5-core.yml"
 SHA_A = "a" * 40
 SHA_B = "b" * 40
 TOKEN = "talaria-" + "c" * 32
@@ -97,6 +98,183 @@ class G2EvidenceBindingTests(unittest.TestCase):
             self.assertIn(argument, g2)
         for marker in ("G2 TEST PASS: ", "G2 TEST FAIL: ", "G2 TEST BLOCKED: "):
             self.assertIn(marker, g2)
+
+
+class GitHubPRModeTests(ShellClassifierTests):
+    def github_entry(self, *arguments: str) -> tuple[str, str, str, str]:
+        return self.classify("talaria_classify_github_pr_entry", *arguments)
+
+    def exact_entry(self) -> list[str]:
+        return [
+            "true",
+            "pull_request",
+            "github-hosted",
+            "Linux",
+            "X64",
+            "markschonfeld/Talaria",
+            "refs/pull/7/merge",
+            SHA_A,
+            "0",
+            SHA_A,
+            "empty",
+            "ubuntu",
+            "24.04",
+            "6.8.0-generic",
+            "x86_64",
+            "absent",
+        ]
+
+    def test_exact_github_pull_request_entry_passes(self) -> None:
+        status, detail, _, _ = self.github_entry(*self.exact_entry())
+        self.assertEqual(status, "PASS")
+        self.assertIn("GitHub-hosted Ubuntu 24.04", detail)
+
+    def test_every_github_pull_request_entry_fact_fails_closed(self) -> None:
+        replacements = {
+            0: "false",
+            1: "workflow_dispatch",
+            2: "self-hosted",
+            3: "macOS",
+            4: "ARM64",
+            5: "markschonfeld/talaria",
+            6: "refs/heads/main",
+            7: "not-a-sha",
+            8: "1",
+            9: SHA_B,
+            10: "nonempty",
+            11: "debian",
+            12: "22.04",
+            13: "5.15.0-microsoft-standard-WSL2",
+            14: "aarch64",
+            15: "present",
+        }
+        for index, replacement in replacements.items():
+            with self.subTest(index=index, replacement=replacement):
+                arguments = self.exact_entry()
+                arguments[index] = replacement
+                status, _, _, _ = self.github_entry(*arguments)
+                self.assertEqual(status, "BLOCKED")
+
+    def test_complete_history_classifier_accepts_only_exact_false_evidence(self) -> None:
+        status, detail, _, _ = self.classify(
+            "talaria_classify_complete_git_history", "0", "false", "empty"
+        )
+        self.assertEqual(status, "PASS")
+        self.assertIn("non-shallow", detail)
+
+        cases = (
+            ("1", "false", "empty"),
+            ("0", "true", "empty"),
+            ("0", "", "empty"),
+            ("0", "false", "nonempty"),
+            ("bad", "false", "empty"),
+            ("0", "false", "unknown"),
+        )
+        for arguments in cases:
+            with self.subTest(arguments=arguments):
+                status, _, _, _ = self.classify(
+                    "talaria_classify_complete_git_history", *arguments
+                )
+                self.assertEqual(status, "BLOCKED")
+
+    def test_g1_g5_green_requires_exact_ordered_pass_inventory(self) -> None:
+        passing = tuple(f"G{number}|PASS|evidence" for number in range(1, 6))
+        status, detail, _, _ = self.classify(
+            "talaria_classify_g1_g5_inventory", *passing
+        )
+        self.assertEqual(status, "PASS")
+        self.assertIn("exact G1-G5", detail)
+
+        cases = (
+            passing[:-1],
+            passing + (passing[-1],),
+            (passing[1], passing[0], *passing[2:]),
+            (*passing[:2], "G3|FAIL|finding", *passing[3:]),
+            (*passing[:2], "G3|BLOCKED|missing", *passing[3:]),
+            (*passing[:2], "G3|DEFER->B|later", *passing[3:]),
+            (*passing[:2], "G9|PASS|unknown", *passing[3:]),
+            (*passing[:2], "G3|PASS|", *passing[3:]),
+        )
+        for rows in cases:
+            with self.subTest(rows=rows):
+                status, _, _, _ = self.classify(
+                    "talaria_classify_g1_g5_inventory", *rows
+                )
+                self.assertEqual(status, "BLOCKED")
+
+    def test_github_mode_is_distinct_and_cannot_run_g6_or_tier_b(self) -> None:
+        script = GAUNTLET.read_text(encoding="utf-8")
+        preflight = script.split("STATUS_HELPERS=", maxsplit=1)[0]
+        main = script.split("# ---- main", maxsplit=1)[1]
+
+        self.assertIn("--github-pr) RUN_GITHUB_PR=1", preflight)
+        self.assertIn('if [ "$RUN_GITHUB_PR" -eq 1 ]', script)
+        self.assertIn('if [ "$RUN_GITHUB_PR" -eq 0 ]; then\n    g6\nfi', main)
+        self.assertIn('talaria_classify_g1_g5_inventory "${RESULTS[@]}"', main)
+        self.assertIn('echo "G1–G5 GREEN"', main)
+        github_result_branch = main.split(
+            'if [ "$RUN_GITHUB_PR" -eq 1 ]; then', maxsplit=1
+        )[1].split('elif [ "$FAILED" -eq 0 ]; then', maxsplit=1)[0]
+        self.assertNotIn("TIER A GREEN", github_result_branch)
+        self.assertNotIn("GAUNTLET GREEN", github_result_branch)
+
+    def test_common_preflight_pins_swift_target_and_g5_proves_full_history(self) -> None:
+        script = GAUNTLET.read_text(encoding="utf-8")
+        self.assertIn('EXPECTED_SWIFT_TARGET="x86_64-unknown-"linux-gnu', script)
+        self.assertIn('SWIFT_TARGET_TRIPLE" = "$EXPECTED_SWIFT_TARGET"', script)
+        g5 = script.split("g5() {", maxsplit=1)[1].split("# ---- G6", maxsplit=1)[0]
+        self.assertIn("git rev-parse --is-shallow-repository", g5)
+        self.assertIn("talaria_classify_complete_git_history", g5)
+
+
+class GitHubPRCoreWorkflowTests(unittest.TestCase):
+    def source(self) -> str:
+        return LINUX_CORE_WORKFLOW.read_text(encoding="utf-8")
+
+    def test_core_is_reusable_read_only_and_fixed_to_hosted_ubuntu(self) -> None:
+        workflow = self.source()
+        trigger = workflow.split("permissions:", maxsplit=1)[0]
+        self.assertIn("on:\n  workflow_call:", trigger)
+        self.assertNotIn("pull_request_target", trigger)
+        self.assertIn("runs-on: ubuntu-24.04", workflow)
+        self.assertEqual(workflow.count("contents: read"), 2)
+        self.assertNotIn("id-token:", workflow)
+        self.assertNotIn("secrets:", workflow)
+
+    def test_core_checkout_is_immutable_credential_free_and_complete(self) -> None:
+        workflow = self.source()
+        self.assertIn(
+            "actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8",
+            workflow,
+        )
+        self.assertIn("fetch-depth: 0", workflow)
+        self.assertIn("persist-credentials: false", workflow)
+        self.assertNotIn("actions/cache", workflow)
+        self.assertNotIn(".build/", workflow)
+
+    def test_pinned_core_proves_source_and_toolchain_before_candidate_code(self) -> None:
+        workflow = self.source()
+        proof_index = workflow.index("Prove hosted source, complete history, and exact toolchain")
+        candidate_index = workflow.index("bash scripts/gauntlet.sh --github-pr")
+        self.assertLess(proof_index, candidate_index)
+        for evidence in (
+            '"$GITHUB_EVENT_NAME" = "pull_request"',
+            '"$RUNNER_ENVIRONMENT" = "github-hosted"',
+            '"$GITHUB_REPOSITORY" = "markschonfeld/Talaria"',
+            '"$head_sha" = "$GITHUB_SHA"',
+            '"$shallow_state" = "false"',
+            "Swift version 6.3.3 (swift-6.3.3-RELEASE)",
+            "x86_64-unknown-linux-gnu",
+            "llvm-cov",
+            "llvm-profdata",
+            "libsourcekitdInProc.so",
+        ):
+            self.assertIn(evidence, workflow)
+
+    def test_core_accepts_only_exact_subset_sentinel(self) -> None:
+        workflow = self.source()
+        self.assertIn("grep -Fx 'G1–G5 GREEN'", workflow)
+        self.assertIn("TIER A GREEN|GAUNTLET GREEN", workflow)
 
 
 class G4ClassificationTests(ShellClassifierTests):
