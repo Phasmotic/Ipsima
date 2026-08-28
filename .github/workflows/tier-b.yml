@@ -304,28 +304,19 @@ jobs:
       # The authorized one-time A/B study is independent of the deterministic
       # structure verdict. Collect it before that known prerequisite blocker so
       # earlier build, test, and observation failures still suppress the study.
-      - name: Run interleaved transport-link A/B diagnostic (10 pairs, no verdict)
+      - name: Build transport-link A/B variants and collect semantic evidence
         run: |
           set -euo pipefail
-          ab_blocked() {
-            echo "G12 LINK A/B BLOCKED — $1" >&2
-            exit 2
-          }
           mkdir -p .gauntlet/g12-ab/evidence
-          python3 - <<'PY'
-          import json
-          from pathlib import Path
-
-          pairs = []
-          for pair in range(1, 11):
-              order = ["control", "linked"] if pair % 2 else ["linked", "control"]
-              pairs.append({"pair": pair, "order": order})
-          Path(".gauntlet/g12-ab/order.json").write_text(
-              json.dumps({"pairs": pairs}, indent=2, sort_keys=True) + "\n",
-              encoding="utf-8",
-              newline="\n",
-          )
-          PY
+          LINK_COLLECTION_STATUS=.gauntlet/g12-ab/link-collection-status.txt
+          printf 'pending\n' >"$LINK_COLLECTION_STATUS"
+          ab_blocked() {
+            blocker_code="$1"
+            blocker_message="$2"
+            printf '%s\n' "$blocker_code" >"$LINK_COLLECTION_STATUS"
+            echo "G12 LINK A/B BLOCKED — $blocker_message" >&2
+            exit 0
+          }
           for variant in control linked; do
             conditions='DEBUG'
             if [ "$variant" = linked ]; then
@@ -341,19 +332,106 @@ jobs:
               SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
               GCC_TREAT_WARNINGS_AS_ERRORS=YES \
               >"$build_log" 2>&1 \
-              || ab_blocked "$variant test build failed"
+              || ab_blocked "${variant}_build_failed" "$variant test build failed"
             python3 -B scripts/check_xcode_log.py \
               --log "$build_log" \
-              --success-marker "** TEST BUILD SUCCEEDED **"
+              --success-marker "** TEST BUILD SUCCEEDED **" \
+              || ab_blocked "${variant}_build_log_invalid" \
+                "$variant test build log is invalid"
+            debug_dylibs="$(find "$derived_data/Build/Products" \
+              -type f -path '*/Talaria.app/Talaria.debug.dylib' -print)" \
+              || ab_blocked "${variant}_debug_dylib_ambiguous" \
+                "$variant debug dylib search failed"
+            [ "$(printf '%s\n' "$debug_dylibs" | awk 'NF' | wc -l | tr -d ' ')" = 1 ] \
+              || ab_blocked "${variant}_debug_dylib_ambiguous" \
+                "$variant build did not produce exactly one app debug dylib"
+            debug_dylib="$(printf '%s\n' "$debug_dylibs" | awk 'NF { print; exit }')"
+            raw_symbols=".gauntlet/g12-ab/$variant-symbols.raw"
+            demangled_symbols=".gauntlet/g12-ab/$variant-symbols.txt"
+            nm_stderr="$raw_symbols.stderr"
+            demangle_stderr="$demangled_symbols.stderr"
+            LC_ALL=C xcrun nm -arch arm64 -U -j "$debug_dylib" \
+              >"$raw_symbols" 2>"$nm_stderr" \
+              || ab_blocked "${variant}_symbol_inventory_failed" \
+                "$variant defined-symbol inventory failed"
+            test -s "$raw_symbols" \
+              || ab_blocked "${variant}_symbol_inventory_empty" \
+                "$variant defined-symbol inventory is empty"
+            test ! -s "$nm_stderr" \
+              || ab_blocked "${variant}_symbol_inventory_stderr" \
+                "$variant defined-symbol inventory emitted stderr"
+            xcrun swift-demangle --compact \
+              <"$raw_symbols" >"$demangled_symbols" 2>"$demangle_stderr" \
+              || ab_blocked "${variant}_symbol_demangle_failed" \
+                "$variant symbol demangling failed"
+            test -s "$demangled_symbols" \
+              || ab_blocked "${variant}_symbol_demangle_empty" \
+                "$variant demangled-symbol inventory is empty"
+            test ! -s "$demangle_stderr" \
+              || ab_blocked "${variant}_symbol_demangle_stderr" \
+                "$variant symbol demangling emitted stderr"
           done
-          CONTROL_LINK_MAPS="$(find .gauntlet/g12-ab/control-derived-data \
-            -type f -name 'Talaria-LinkMap-arm64.txt' -print)"
-          LINKED_LINK_MAPS="$(find .gauntlet/g12-ab/linked-derived-data \
-            -type f -name 'Talaria-LinkMap-arm64.txt' -print)"
-          [ "$(printf '%s\n' "$CONTROL_LINK_MAPS" | awk 'NF' | wc -l | tr -d ' ')" = 1 ] \
-            || ab_blocked "control build did not produce exactly one app link map"
-          [ "$(printf '%s\n' "$LINKED_LINK_MAPS" | awk 'NF' | wc -l | tr -d ' ')" = 1 ] \
-            || ab_blocked "linked build did not produce exactly one app link map"
+          printf 'complete\n' >"$LINK_COLLECTION_STATUS"
+
+      - name: Render sanitized transport-link preflight evidence
+        run: |
+          set -euo pipefail
+          python3 -B scripts/analyze_launch_ab.py render-link \
+            --collection-status .gauntlet/g12-ab/link-collection-status.txt \
+            --control-symbols .gauntlet/g12-ab/control-symbols.txt \
+            --linked-symbols .gauntlet/g12-ab/linked-symbols.txt \
+            --output-json .gauntlet/g12-link-preflight.json \
+            2>&1 | tee .gauntlet/g12-link-preflight.log
+
+      - name: Upload sanitized transport-link preflight evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: g12-link-preflight-${{ github.run_id }}
+          path: .gauntlet/g12-link-preflight.json
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Enforce retained transport-link preflight evidence
+        run: |
+          set -euo pipefail
+          python3 -B scripts/analyze_launch_ab.py enforce-link \
+            --input-json .gauntlet/g12-link-preflight.json \
+            2>&1 | tee -a .gauntlet/g12-link-preflight.log
+
+      - name: Collect interleaved transport-link A/B observations (10 pairs, no verdict)
+        run: |
+          set -euo pipefail
+          MEASUREMENT_COLLECTION_STATUS=.gauntlet/g12-ab/measurement-collection-status.txt
+          printf 'pending\n' >"$MEASUREMENT_COLLECTION_STATUS"
+          ab_blocked() {
+            blocker_code="$1"
+            blocker_pair="$2"
+            blocker_message="$3"
+            if [ -n "$blocker_pair" ]; then
+              printf '%s:%s\n' "$blocker_code" "$blocker_pair" \
+                >"$MEASUREMENT_COLLECTION_STATUS"
+            else
+              printf '%s\n' "$blocker_code" >"$MEASUREMENT_COLLECTION_STATUS"
+            fi
+            echo "G12 LINK A/B BLOCKED — $blocker_message" >&2
+            exit 0
+          }
+          python3 - <<'PY' \
+            || ab_blocked "order_generation_failed" "" \
+              "A/B observation order generation failed"
+          import json
+          from pathlib import Path
+
+          pairs = []
+          for pair in range(1, 11):
+              order = ["control", "linked"] if pair % 2 else ["linked", "control"]
+              pairs.append({"pair": pair, "order": order})
+          Path(".gauntlet/g12-ab/order.json").write_text(
+              json.dumps({"pairs": pairs}, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+              newline="\n",
+          )
+          PY
           AB_TEST_ID='test://com.apple.xcode/Talaria/TalariaLaunchABTests/LinkABLaunchUITests/testOneLaunchObservation'
           run_ab_observation() {
             pair="$1"
@@ -374,10 +452,13 @@ jobs:
               -only-testing:TalariaLaunchABTests/LinkABLaunchUITests/testOneLaunchObservation \
               -resultBundlePath "$result" \
               >"$log" 2>&1 \
-              || ab_blocked "pair $pair $variant test failed"
+              || ab_blocked "${variant}_test_failed" "$pair" \
+                "pair $pair $variant test failed"
             python3 -B scripts/check_xcode_log.py \
               --log "$log" \
-              --success-marker "** TEST EXECUTE SUCCEEDED **"
+              --success-marker "** TEST EXECUTE SUCCEEDED **" \
+              || ab_blocked "${variant}_test_log_invalid" "$pair" \
+                "pair $pair $variant test log is invalid"
             metrics=".gauntlet/g12-ab/evidence/pair-$pair-$variant.json"
             metrics_stderr="$metrics.stderr"
             xcrun xcresulttool get test-results metrics \
@@ -385,11 +466,14 @@ jobs:
               --path "$result" \
               --test-id "$AB_TEST_ID" \
               --compact >"$metrics" 2>"$metrics_stderr" \
-              || ab_blocked "pair $pair $variant metrics export failed"
+              || ab_blocked "${variant}_metrics_export_failed" "$pair" \
+                "pair $pair $variant metrics export failed"
             test -s "$metrics" \
-              || ab_blocked "pair $pair $variant metrics evidence is empty"
+              || ab_blocked "${variant}_metrics_empty" "$pair" \
+                "pair $pair $variant metrics evidence is empty"
             test ! -s "$metrics_stderr" \
-              || ab_blocked "pair $pair $variant metrics export emitted stderr"
+              || ab_blocked "${variant}_metrics_stderr" "$pair" \
+                "pair $pair $variant metrics export emitted stderr"
           }
           for pair in 01 02 03 04 05 06 07 08 09 10; do
             case "$pair" in
@@ -400,13 +484,21 @@ jobs:
               run_ab_observation "$pair" "$variant"
             done
           done
-          python3 -B scripts/analyze_launch_ab.py \
+          printf 'complete\n' >"$MEASUREMENT_COLLECTION_STATUS"
+
+      - name: Render sanitized transport-link A/B evidence
+        run: |
+          set -euo pipefail
+          python3 -B scripts/analyze_launch_ab.py render \
             --evidence-dir .gauntlet/g12-ab/evidence \
+            --link-collection-status .gauntlet/g12-ab/link-collection-status.txt \
+            --measurement-collection-status \
+              .gauntlet/g12-ab/measurement-collection-status.txt \
             --order-json .gauntlet/g12-ab/order.json \
             --schema-json .gauntlet/g12-metrics-schema.json \
             --output-json .gauntlet/g12-link-ab-analysis.json \
-            --control-link-map "$CONTROL_LINK_MAPS" \
-            --linked-link-map "$LINKED_LINK_MAPS" \
+            --control-symbols .gauntlet/g12-ab/control-symbols.txt \
+            --linked-symbols .gauntlet/g12-ab/linked-symbols.txt \
             2>&1 | tee .gauntlet/g12-link-ab-analysis.log
 
       - name: Upload sanitized transport-link A/B evidence
@@ -416,6 +508,13 @@ jobs:
           path: .gauntlet/g12-link-ab-analysis.json
           if-no-files-found: error
           retention-days: 90
+
+      - name: Enforce retained transport-link A/B evidence
+        run: |
+          set -euo pipefail
+          python3 -B scripts/analyze_launch_ab.py enforce \
+            --input-json .gauntlet/g12-link-ab-analysis.json \
+            2>&1 | tee -a .gauntlet/g12-link-ab-analysis.log
 
       - name: Collect deterministic launch-structure replacement evidence
         run: |

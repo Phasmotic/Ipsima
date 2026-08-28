@@ -44,8 +44,6 @@ targets:
         SWIFT_STRICT_CONCURRENCY: complete
         SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) TALARIA_LINK_TRANSPORT"
         OTHER_LDFLAGS: "$(inherited) -Wl,-u,_talaria_launch_link_anchor"
-        LD_GENERATE_MAP_FILE: YES
-        LD_MAP_FILE_PATH: "$(PROJECT_TEMP_DIR)/Talaria-LinkMap-$(CURRENT_ARCH).txt"
 
   TalariaWidgets:
     type: app-extension

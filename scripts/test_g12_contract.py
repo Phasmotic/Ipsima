@@ -7,6 +7,8 @@ LAUNCH_TEST = REPO / "Tests" / "TalariaUITests" / "LaunchPerformanceUITests.swif
 LAUNCH_AUDIT_TEST = REPO / "Tests" / "TalariaUITests" / "LaunchActivityAuditUITests.swift"
 LINK_AB_TEST = REPO / "Tests" / "TalariaLaunchABTests" / "LinkABLaunchUITests.swift"
 CONTENT_VIEW = REPO / "App" / "Talaria" / "ContentView.swift"
+LINK_ANCHOR = REPO / "App" / "Talaria" / "LaunchLinkAnchor.swift"
+RESOURCE_FACTORY = REPO / "App" / "Talaria" / "AuditedLaunchResourceFactory.swift"
 WORKFLOW = REPO / ".github" / "workflows" / "tier-b.yml"
 OBSERVER = REPO / "scripts" / "check_launch_metrics.py"
 STRUCTURE = REPO / "scripts" / "check_launch_structure.py"
@@ -113,6 +115,8 @@ class G12ContractTests(unittest.TestCase):
     def test_transport_link_study_is_paired_interleaved_and_verdict_free(self) -> None:
         analyzer = ANALYZER.read_text(encoding="utf-8")
         launch_test = LINK_AB_TEST.read_text(encoding="utf-8")
+        link_anchor = LINK_ANCHOR.read_text(encoding="utf-8")
+        resource_factory = RESOURCE_FACTORY.read_text(encoding="utf-8")
         project = PROJECT.read_text(encoding="utf-8")
         workflow = WORKFLOW.read_text(encoding="utf-8")
 
@@ -130,17 +134,78 @@ class G12ContractTests(unittest.TestCase):
         self.assertIn("It has no threshold", launch_test)
         self.assertIn("Talaria-LinkAB:", project)
         self.assertIn("TALARIA_LINK_TRANSPORT", project)
-        self.assertIn("Talaria-LinkMap-$(CURRENT_ARCH).txt", project)
+        self.assertNotIn("Talaria-LinkMap", project)
+        self.assertIn('@_cdecl("talaria_transport_factory_link_anchor")', link_anchor)
+        self.assertIn("@inline(never)", link_anchor)
+        self.assertIn("AuditedLaunchResourceFactory.webSocketTransport", link_anchor)
+        self.assertIn("Unmanaged.passRetained(transport).toOpaque()", link_anchor)
+        self.assertIn(
+            "talariaTransportFactoryLinkAnchor as TransportFactoryLinkFunction",
+            link_anchor,
+        )
+        self.assertIn("return WebSocketHermesTransport(", resource_factory)
         observation_upload = workflow.index("Upload sanitized G12 per-iteration observation")
-        study_start = workflow.index("Run interleaved transport-link A/B diagnostic")
+        build = workflow.index(
+            "Build transport-link A/B variants and collect semantic evidence"
+        )
+        preflight_render = workflow.index(
+            "Render sanitized transport-link preflight evidence"
+        )
+        preflight_upload = workflow.index(
+            "Upload sanitized transport-link preflight evidence"
+        )
+        preflight_enforce = workflow.index(
+            "Enforce retained transport-link preflight evidence"
+        )
+        observations = workflow.index(
+            "Collect interleaved transport-link A/B observations"
+        )
+        render = workflow.index("Render sanitized transport-link A/B evidence")
         study_upload = workflow.index("Upload sanitized transport-link A/B evidence")
+        enforce = workflow.index("Enforce retained transport-link A/B evidence")
         structure = workflow.index("Collect deterministic launch-structure replacement evidence")
-        study = workflow[study_start:study_upload]
-        self.assertLess(observation_upload, study_start)
-        self.assertLess(study_start, study_upload)
-        self.assertLess(study_upload, structure)
-        self.assertIn('--success-marker "** TEST EXECUTE SUCCEEDED **"', study)
-        self.assertNotIn('--success-marker "** TEST SUCCEEDED **"', study)
+        build_section = workflow[build:preflight_render]
+        preflight_flow = workflow[preflight_render:observations]
+        observation_section = workflow[observations:render]
+        full_analysis_flow = workflow[render:structure]
+        evidence_flow = workflow[preflight_render:structure]
+        self.assertLess(observation_upload, build)
+        self.assertLess(build, preflight_render)
+        self.assertLess(preflight_render, preflight_upload)
+        self.assertLess(preflight_upload, preflight_enforce)
+        self.assertLess(preflight_enforce, observations)
+        self.assertLess(observations, render)
+        self.assertLess(render, study_upload)
+        self.assertLess(study_upload, enforce)
+        self.assertLess(enforce, structure)
+        self.assertIn("xcrun nm -arch arm64 -U -j", build_section)
+        self.assertIn("xcrun swift-demangle --compact", build_section)
+        self.assertIn("link-collection-status.txt", build_section)
+        self.assertIn("symbol_inventory_failed", build_section)
+        self.assertIn("exit 0", build_section)
+        self.assertNotIn("exit 2", build_section)
+        self.assertNotIn("test-without-building", build_section)
+        self.assertIn("analyze_launch_ab.py render-link", preflight_flow)
+        self.assertIn("analyze_launch_ab.py enforce-link", preflight_flow)
+        self.assertIn("--collection-status", preflight_flow)
+        self.assertIn("if-no-files-found: error", preflight_flow)
+        self.assertNotIn("test-without-building", preflight_flow)
+        self.assertIn("test-without-building", observation_section)
+        self.assertIn("measurement-collection-status.txt", observation_section)
+        self.assertIn("metrics_export_failed", observation_section)
+        self.assertIn("exit 0", observation_section)
+        self.assertNotIn("exit 2", observation_section)
+        self.assertIn(
+            '--success-marker "** TEST EXECUTE SUCCEEDED **"',
+            observation_section,
+        )
+        self.assertNotIn(
+            '--success-marker "** TEST SUCCEEDED **"', observation_section
+        )
+        self.assertIn("--link-collection-status", full_analysis_flow)
+        self.assertIn("--measurement-collection-status", full_analysis_flow)
+        for bypass in ("always()", "!cancelled()", "continue-on-error", "if: failure()"):
+            self.assertNotIn(bypass, evidence_flow)
 
     def test_rearm_contract_is_complete_and_blocks_p2_closure(self) -> None:
         for path in (BRIEF, GOVERNANCE):

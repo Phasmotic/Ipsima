@@ -271,12 +271,14 @@ seconds. All prior passes and failures remain measurements from that defective i
 certifications. The observer remains strict about evidence shape and preserves all five individual
 values, but emits no verdict.
 
-Current deterministic replacement coverage consists of DYLD pre-main rebase/binding/initializer
-ratchets; exact size ratchets for both the simulator app executor and `Talaria.debug.dylib`; a
-Mach-O load-closure and static-initializer audit over both images; and a first-draw assertion that
-no Talaria-owned URL session, reachability listener, or timer was created before the frame. A
-source contract prevents bypassing the audited constructors. No replacement uses an end-to-end
-wall-clock threshold.
+The authorized deterministic replacement contract requires DYLD pre-main
+rebase/binding/initializer ratchets; exact size ratchets for both the simulator app executor and
+`Talaria.debug.dylib`; a Mach-O load-closure and static-initializer audit over both images; and a
+first-draw assertion that no Talaria-owned URL session, reachability listener, or timer was created
+before the frame. A source contract prevents bypassing the audited constructors. No replacement
+uses an end-to-end wall-clock threshold. Xcode 26's dyld no longer implements
+`DYLD_PRINT_STATISTICS`, so the required pre-main component remains BLOCKED pending an authorized
+substitution; the other replacement checks do not turn that missing component green.
 
 G12 cold launch re-arms in P2. Before collecting its baseline, write a detection floor (`>= X ms`
 at confidence `Y`), use a pinned known-good reference binary interleaved in the same job on the

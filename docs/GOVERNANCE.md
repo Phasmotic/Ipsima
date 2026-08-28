@@ -105,12 +105,36 @@ measurements from a defectively specified instrument; none remains a certificati
 sanitized record is in [public audit issue #2](https://github.com/markschonfeld/Talaria/issues/2#issuecomment-5457754926).
 
 While stood down, the five-sample XCTest observer continues only to retain every per-iteration
-value and cannot emit PASS or FAIL. Deterministic replacement coverage gates DYLD pre-main
-rebase/binding/initializer statistics, exact app-executable and debug-dylib size ratchets, the
-app-owned Mach-O load closure and absence of `__mod_init_func`, and a first-draw assertion that no
-Talaria-owned URL session, reachability listener, or timer was created beforehand. The source
-contract makes construction bypasses fail closed. These checks are replacement coverage; none is
-a renamed end-to-end wall-clock verdict.
+value and cannot emit PASS or FAIL. The authorized deterministic replacement contract requires
+DYLD pre-main rebase/binding/initializer statistics, exact app-executable and debug-dylib size
+ratchets, the app-owned Mach-O load closure and absence of `__mod_init_func`, and a first-draw
+assertion that no Talaria-owned URL session, reachability listener, or timer was created
+beforehand. The source contract makes construction bypasses fail closed. These checks are
+replacement coverage; none is a renamed end-to-end wall-clock verdict.
+
+The pinned Xcode 26 dyld no longer implements `DYLD_PRINT_STATISTICS`, so that authorized
+pre-main component is currently **BLOCKED**, not passed, omitted, or silently substituted. The
+sanitized source-backed finding is recorded in public audit issue #2 and must receive an
+orchestrator-approved replacement before P1.2 can close.
+
+The one-time transport-link A/B study proves its contrast in each built
+`Talaria.debug.dylib`, never from source-object filenames. Xcode 26 overwrites the app-code link
+map with its debug executor's map, and Swift can merge package sources into one relocatable
+object; neither is valid semantic evidence. A linker-rooted, never-executed factory thunk retains
+the real production transport initializer and networking witnesses only in the linked variant.
+Defined-symbol evidence must prove the common launch anchor, the linked-only factory anchor, the
+transport initializer, and the three production adapter witnesses before any of the twenty
+interleaved launches run. The semantic preflight has its own render, ordinary-success upload, and
+enforce sequence: build, inventory, demangling, or contrast failure is retained as a sanitized,
+typed `blocked` artifact before the enforcer stops the observations. Raw inventories are never
+uploaded.
+
+The full A/B analysis uses the same separate render and enforce pattern. Render returning zero
+means only that a strict, sanitized `observed` or `blocked` artifact was serialized. The
+ordinary-success artifact upload occurs next; only the following enforcer can accept `observed`.
+Observation and metric-export failures follow that path too, with only an allowlisted stage,
+variant, and pair number retained. A blocked or contradictory artifact turns the job BLOCKED
+after retention and can never satisfy a green sentinel.
 
 G12 cold launch must be re-specified and re-armed in P2, and P2 cannot close while it remains stood
 down. Before baseline collection, the new contract must:

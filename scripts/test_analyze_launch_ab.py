@@ -117,43 +117,63 @@ def write_valid_fixture(root: Path) -> dict[str, Path]:
     )
     schema_path = root / "schema.json"
     schema_path.write_bytes(SCHEMA_BYTES)
-    control_map = root / "control-LinkMap.txt"
-    control_map.write_text(
-        "# Object files:\n[ 1] TalariaApp.o\n",
+    control_symbols = root / "control-symbols.txt"
+    control_symbols.write_text(
+        "_$s9HermesKit9WireCodecVN\n_talaria_launch_link_anchor\n",
         encoding="utf-8",
     )
-    linked_map = root / "linked-LinkMap.txt"
-    linked_map.write_text(
-        "# Object files:\n"
-        "[ 1] libHermesKit.a(HermesTransport.o)\n"
-        "[ 2] libHermesKit.a(WebSocketNetworking.o)\n"
-        "[ 3] libHermesKit.a(WebSocketHermesTransport.o)\n",
+    linked_symbols = root / "linked-symbols.txt"
+    linked_symbols.write_text(
+        "HermesKit.WebSocketHermesTransport.__allocating_init(configuration: "
+        "HermesKit.HermesWebSocketConfiguration, tokenProvider: "
+        "HermesKit.HermesBearerTokenProvider) -> "
+        "HermesKit.WebSocketHermesTransport\n"
+        "protocol witness for HermesKit.HermesHTTPDataLoading.data(for: "
+        "Foundation.URLRequest) in conformance HermesKit.URLSessionHTTPDataLoader\n"
+        "protocol witness for HermesKit.HermesWebSocketTicketAcquiring."
+        "acquireTicket() in conformance HermesKit.URLSessionWebSocketTicketAcquirer\n"
+        "protocol witness for HermesKit.HermesWebSocketConnecting.connect(to: "
+        "Foundation.URL) in conformance HermesKit.URLSessionWebSocketConnector\n"
+        "_talaria_launch_link_anchor\n"
+        "_talaria_transport_factory_link_anchor\n",
         encoding="utf-8",
     )
+    link_collection_status = root / "link-collection-status.txt"
+    link_collection_status.write_bytes(b"complete\n")
+    measurement_collection_status = root / "measurement-collection-status.txt"
+    measurement_collection_status.write_bytes(b"complete\n")
     return {
         "evidence_dir": evidence_dir,
+        "link_collection_status": link_collection_status,
+        "measurement_collection_status": measurement_collection_status,
         "order": order_path,
         "schema": schema_path,
-        "control_map": control_map,
-        "linked_map": linked_map,
+        "control_symbols": control_symbols,
+        "linked_symbols": linked_symbols,
+        "link_output": root / "link-preflight.json",
         "output": root / "analysis.json",
     }
 
 
 def argv(paths: dict[str, Path]) -> list[str]:
     return [
+        "render",
         "--evidence-dir",
         str(paths["evidence_dir"]),
+        "--link-collection-status",
+        str(paths["link_collection_status"]),
+        "--measurement-collection-status",
+        str(paths["measurement_collection_status"]),
         "--order-json",
         str(paths["order"]),
         "--schema-json",
         str(paths["schema"]),
         "--output-json",
         str(paths["output"]),
-        "--control-link-map",
-        str(paths["control_map"]),
-        "--linked-link-map",
-        str(paths["linked_map"]),
+        "--control-symbols",
+        str(paths["control_symbols"]),
+        "--linked-symbols",
+        str(paths["linked_symbols"]),
     ]
 
 
@@ -199,75 +219,113 @@ class OrderEvidenceTests(unittest.TestCase):
             analyzer._parse_order_document(b'{"pairs":[],"pairs":[]}')
 
 
-class LinkMapTests(unittest.TestCase):
-    VALID_LINKED = (
-        b"# Object files:\n"
-        b"[1] libHermesKit.a(HermesTransport.o)\n"
-        b"[2] libHermesKit.a(WebSocketNetworking.o)\n"
-        b"[3] libHermesKit.a(WebSocketHermesTransport.o)\n"
-        b"# Sections:\n"
-    )
-
-    def test_expected_object_presence_and_absence_are_accepted(self) -> None:
-        analyzer.verify_link_maps(
-            b"# Object files:\n[1] TalariaApp.o\n# Sections:\n",
-            self.VALID_LINKED,
-        )
-
-    def test_mock_gateway_is_neither_required_nor_forbidden(self) -> None:
-        analyzer.verify_link_maps(
-            b"# Object files:\n[1] MockGateway.o\n# Sections:\n",
-            self.VALID_LINKED.replace(
-                b"# Sections:\n", b"[4] MockGateway.o\n# Sections:\n"
-            ),
-        )
-
-    def test_transport_object_in_control_blocks(self) -> None:
-        with self.assertRaisesRegex(analyzer.AnalysisBlocked, "unexpectedly"):
-            analyzer.verify_link_maps(
-                b"# Object files:\n[1] HermesTransport.o\n# Sections:\n",
-                self.VALID_LINKED,
+class LinkSymbolTests(unittest.TestCase):
+    def valid_symbols(self) -> tuple[bytes, bytes]:
+        with TemporaryDirectory() as directory:
+            paths = write_valid_fixture(Path(directory))
+            return (
+                paths["control_symbols"].read_bytes(),
+                paths["linked_symbols"].read_bytes(),
             )
 
-    def test_each_missing_linked_object_blocks(self) -> None:
-        for object_name in analyzer.TRANSPORT_OBJECT_NAMES:
-            linked = self.VALID_LINKED.replace(
-                f"{object_name}.o".encode("utf-8"), b"OtherObject.o"
-            )
-            with self.subTest(object_name=object_name), self.assertRaisesRegex(
-                analyzer.AnalysisBlocked, "does not contain"
+    def test_expected_semantic_presence_and_absence_are_accepted(self) -> None:
+        control, linked = self.valid_symbols()
+        result = analyzer.verify_link_symbols(control, linked)
+        self.assertEqual(result["status"], "verified")
+        self.assertEqual(set(result["checks"].values()), {True})  # type: ignore[union-attr]
+
+    def test_each_required_linked_semantic_symbol_blocks_independently(self) -> None:
+        control, linked = self.valid_symbols()
+        for check_name, (prefix, _) in analyzer.SEMANTIC_SYMBOL_SPECS.items():
+            mutated = linked.replace(prefix.encode("utf-8"), b"missing", 1)
+            with self.subTest(check=check_name), self.assertRaises(
+                analyzer.AnalysisBlocked
             ):
-                analyzer.verify_link_maps(
-                    b"# Object files:\n[1] TalariaApp.o\n# Sections:\n",
-                    linked,
-                )
+                analyzer.verify_link_symbols(control, mutated)
 
-    def test_substrings_do_not_count_as_object_names(self) -> None:
-        deceptive = self.VALID_LINKED.replace(
-            b"HermesTransport.o", b"NotHermesTransport.oops"
+    def test_each_transport_only_symbol_in_control_blocks(self) -> None:
+        control, linked = self.valid_symbols()
+        linked_lines = linked.decode("utf-8").splitlines()
+        transport_lines = [
+            line
+            for line in linked_lines
+            if line == analyzer.TRANSPORT_FACTORY_SYMBOL
+            or any(
+                line.startswith(prefix) and all(token in line for token in tokens)
+                for prefix, tokens in analyzer.SEMANTIC_SYMBOL_SPECS.values()
+            )
+        ]
+        for line in transport_lines:
+            mutated = control + line.encode("utf-8") + b"\n"
+            with self.subTest(line=line), self.assertRaises(analyzer.AnalysisBlocked):
+                analyzer.verify_link_symbols(mutated, linked)
+
+    def test_c_marker_substring_does_not_count(self) -> None:
+        control, linked = self.valid_symbols()
+        deceptive = linked.replace(
+            analyzer.TRANSPORT_FACTORY_SYMBOL.encode("utf-8"),
+            (analyzer.TRANSPORT_FACTORY_SYMBOL + "_lookalike").encode("utf-8"),
         )
         with self.assertRaises(analyzer.AnalysisBlocked):
-            analyzer.verify_link_maps(
-                b"# Object files:\n[1] TalariaApp.o\n# Sections:\n",
-                deceptive,
-            )
+            analyzer.verify_link_symbols(control, deceptive)
 
-    def test_names_outside_object_section_do_not_count(self) -> None:
-        deceptive = (
-            b"# Object files:\n[1] TalariaApp.o\n# Sections:\n"
-            b"# HermesTransport.o WebSocketNetworking.o "
-            b"WebSocketHermesTransport.o\n"
-        )
+    def test_metadata_or_concrete_method_does_not_count_as_executable_proof(self) -> None:
+        control, linked = self.valid_symbols()
+        metadata_only = linked.replace(b".__allocating_init(", b".type metadata (")
+        concrete_method = linked.replace(b"protocol witness for", b"concrete method for")
+        for mutated in (metadata_only, concrete_method):
+            with self.subTest(mutated=mutated), self.assertRaises(
+                analyzer.AnalysisBlocked
+            ):
+                analyzer.verify_link_symbols(control, mutated)
+
+    def test_adapter_type_name_outside_conformance_clause_does_not_count(self) -> None:
+        control, linked = self.valid_symbols()
+        conformance_tokens = [
+            tokens[0]
+            for _, tokens in analyzer.SEMANTIC_SYMBOL_SPECS.values()
+            if tokens[0].startswith("in conformance ")
+        ]
+        self.assertEqual(len(conformance_tokens), 3)
+        for token in conformance_tokens:
+            deceptive = token.replace("in conformance ", "mentions ", 1)
+            mutated = linked.replace(
+                token.encode("utf-8"), deceptive.encode("utf-8"), 1
+            )
+            with self.subTest(token=token), self.assertRaises(
+                analyzer.AnalysisBlocked
+            ):
+                analyzer.verify_link_symbols(control, mutated)
+
+    def test_descriptors_resume_partials_and_async_pointers_are_not_ambiguous(self) -> None:
+        control, linked = self.valid_symbols()
+        primary_lines = [
+            line
+            for line in linked.decode("utf-8").splitlines()
+            if any(
+                line.startswith(prefix) and all(token in line for token in tokens)
+                for prefix, tokens in analyzer.SEMANTIC_SYMBOL_SPECS.values()
+            )
+        ]
+        extras = []
+        for line in primary_lines:
+            extras.append("method descriptor for " + line)
+            if line.startswith("protocol witness for "):
+                extras.append("(1) await resume partial function for " + line)
+                extras.append("async function pointer to " + line)
+        with_extras = linked + ("\n".join(extras) + "\n").encode("utf-8")
+        result = analyzer.verify_link_symbols(control, with_extras)
+        self.assertEqual(result["status"], "verified")
+
+        duplicate_primary = linked + (primary_lines[0] + "\n").encode("utf-8")
         with self.assertRaises(analyzer.AnalysisBlocked):
-            analyzer.verify_link_maps(
-                b"# Object files:\n[1] TalariaApp.o\n# Sections:\n",
-                deceptive,
-            )
+            analyzer.verify_link_symbols(control, duplicate_primary)
 
-    def test_empty_invalid_utf8_and_nul_maps_block(self) -> None:
-        for raw in (b"", b" \n", b"\xff", b"map\x00text"):
+    def test_empty_invalid_utf8_and_nul_symbol_evidence_blocks(self) -> None:
+        _, linked = self.valid_symbols()
+        for raw in (b"", b" \n", b"\xff", b"symbol\x00name"):
             with self.subTest(raw=raw), self.assertRaises(analyzer.AnalysisBlocked):
-                analyzer.verify_link_maps(raw, self.VALID_LINKED)
+                analyzer.verify_link_symbols(raw, linked)
 
 
 class PairedEvidenceTests(unittest.TestCase):
@@ -376,27 +434,150 @@ class CommandLineTests(unittest.TestCase):
             status = analyzer.main(argv(paths))
         return status, stdout.getvalue(), stderr.getvalue()
 
+    def run_enforce(self, path: Path) -> tuple[int, str, str]:
+        stdout = StringIO()
+        stderr = StringIO()
+        with redirect_stdout(stdout), redirect_stderr(stderr):
+            status = analyzer.main(["enforce", "--input-json", str(path)])
+        return status, stdout.getvalue(), stderr.getvalue()
+
+    def test_preflight_retains_then_enforces_valid_and_blocked_symbols(self) -> None:
+        with TemporaryDirectory() as directory:
+            paths = write_valid_fixture(Path(directory))
+            render_command = [
+                "render-link",
+                "--collection-status",
+                str(paths["link_collection_status"]),
+                "--control-symbols",
+                str(paths["control_symbols"]),
+                "--linked-symbols",
+                str(paths["linked_symbols"]),
+                "--output-json",
+                str(paths["link_output"]),
+            ]
+            enforce_command = [
+                "enforce-link",
+                "--input-json",
+                str(paths["link_output"]),
+            ]
+            stdout = StringIO()
+            stderr = StringIO()
+            with redirect_stdout(stdout), redirect_stderr(stderr):
+                render_status = analyzer.main(render_command)
+                enforce_status = analyzer.main(enforce_command)
+            valid_output = paths["link_output"].read_text(encoding="utf-8")
+
+            paths["linked_symbols"].write_text(
+                "_talaria_launch_link_anchor\n", encoding="utf-8"
+            )
+            blocked_stdout = StringIO()
+            blocked_stderr = StringIO()
+            with redirect_stdout(blocked_stdout), redirect_stderr(blocked_stderr):
+                blocked_render_status = analyzer.main(render_command)
+                blocked_enforce_status = analyzer.main(enforce_command)
+            blocked_output = paths["link_output"].read_text(encoding="utf-8")
+
+        self.assertEqual(render_status, 0)
+        self.assertEqual(enforce_status, 0)
+        self.assertIn("status=verified", stdout.getvalue())
+        self.assertIn("LINKAGE VERIFIED", stdout.getvalue())
+        self.assertEqual(stderr.getvalue(), "")
+        self.assertNotIn("HermesKit.", valid_output)
+        self.assertNotIn("_talaria_", valid_output)
+        self.assertEqual(blocked_render_status, 0)
+        self.assertEqual(blocked_enforce_status, 2)
+        self.assertIn("status=blocked", blocked_stdout.getvalue())
+        self.assertIn("G12 LINK A/B BLOCKED:", blocked_stderr.getvalue())
+        self.assertEqual(json.loads(blocked_output)["status"], "blocked")
+
+    def test_link_collection_failure_is_sanitized_before_enforcement(self) -> None:
+        with TemporaryDirectory() as directory:
+            paths = write_valid_fixture(Path(directory))
+            paths["link_collection_status"].write_bytes(
+                b"control_symbol_inventory_failed\n"
+            )
+            render_command = [
+                "render-link",
+                "--collection-status",
+                str(paths["link_collection_status"]),
+                "--control-symbols",
+                str(paths["control_symbols"]),
+                "--linked-symbols",
+                str(paths["linked_symbols"]),
+                "--output-json",
+                str(paths["link_output"]),
+            ]
+            with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
+                render_status = analyzer.main(render_command)
+                enforce_status = analyzer.main(
+                    ["enforce-link", "--input-json", str(paths["link_output"])]
+                )
+            document = json.loads(paths["link_output"].read_text(encoding="utf-8"))
+
+        self.assertEqual(render_status, 0)
+        self.assertEqual(enforce_status, 2)
+        self.assertEqual(document["status"], "blocked")
+        self.assertEqual(
+            document["link_contrast"]["blocker_code"],
+            "control_symbol_inventory_failed",
+        )
+        self.assertEqual(set(document["link_contrast"]["checks"].values()), {None})
+
+    def test_observation_failure_is_sanitized_before_enforcement(self) -> None:
+        with TemporaryDirectory() as directory:
+            paths = write_valid_fixture(Path(directory))
+            paths["measurement_collection_status"].write_bytes(
+                b"linked_metrics_export_failed:04\n"
+            )
+            status, stdout, stderr = self.run_main(paths)
+            enforce_status, _, enforce_stderr = self.run_enforce(paths["output"])
+            document = json.loads(paths["output"].read_text(encoding="utf-8"))
+
+        self.assertEqual(status, 0)
+        self.assertIn("status=blocked", stdout)
+        self.assertEqual(stderr, "")
+        self.assertEqual(enforce_status, 2)
+        self.assertIn("G12 LINK A/B BLOCKED:", enforce_stderr)
+        self.assertEqual(
+            document["measurements"]["blocker_code"],
+            "linked_metrics_export_failed",
+        )
+        self.assertEqual(document["measurements"]["blocker_pair"], 4)
+        self.assertEqual(document["measurements"]["pairs"], [])
+
     def test_valid_analysis_writes_sanitized_observation_without_verdict(self) -> None:
         with TemporaryDirectory() as directory:
             paths = write_valid_fixture(Path(directory))
             status, stdout, stderr = self.run_main(paths)
             output = paths["output"].read_text(encoding="utf-8")
+            enforce_status, enforce_stdout, enforce_stderr = self.run_enforce(
+                paths["output"]
+            )
 
         self.assertEqual(status, 0)
-        self.assertIn("G12 LINK A/B OBSERVED:", stdout)
+        self.assertIn("G12 LINK A/B EVIDENCE RETAINED: status=observed", stdout)
         self.assertNotIn("PASS", stdout)
         self.assertNotIn("FAIL", stdout)
         self.assertNotIn("GREEN", stdout)
         self.assertEqual(stderr, "")
+        self.assertEqual(enforce_status, 0)
+        self.assertIn("G12 LINK A/B OBSERVED:", enforce_stdout)
+        self.assertEqual(enforce_stderr, "")
         self.assertNotIn(DEVICE_ID, output)
         self.assertNotIn(DEVICE_NAME, output)
         parsed = json.loads(output)
-        self.assertEqual(len(parsed["pairs"]), 10)
-        self.assertEqual(parsed["pairs"][0]["control_seconds"], "2.0")
-        self.assertEqual(parsed["pairs"][0]["linked_seconds"], "1.0")
-        self.assertEqual(parsed["pairs"][0]["delta_seconds"], "-1.0")
+        self.assertEqual(parsed["status"], "observed")
+        self.assertEqual(parsed["link_contrast"]["status"], "verified")
+        self.assertEqual(set(parsed["link_contrast"]["checks"].values()), {True})
+        pairs = parsed["measurements"]["pairs"]
+        self.assertEqual(len(pairs), 10)
+        self.assertEqual(pairs[0]["control_seconds"], "2.0")
+        self.assertEqual(pairs[0]["linked_seconds"], "1.0")
+        self.assertEqual(pairs[0]["delta_seconds"], "-1.0")
+        self.assertNotIn("HermesKit.", output)
+        self.assertNotIn("_talaria_", output)
 
-    def test_schema_mismatch_or_malformed_pair_blocks_and_writes_no_output(self) -> None:
+    def test_schema_mismatch_or_malformed_pair_retains_blocked_evidence(self) -> None:
         for mutation in ("schema", "metrics"):
             with TemporaryDirectory() as directory:
                 paths = write_valid_fixture(Path(directory))
@@ -408,11 +589,68 @@ class CommandLineTests(unittest.TestCase):
                         "not JSON", encoding="utf-8"
                     )
                 status, stdout, stderr = self.run_main(paths, digest=digest)
+                output = paths["output"].read_text(encoding="utf-8")
+                enforce_status, enforce_stdout, enforce_stderr = self.run_enforce(
+                    paths["output"]
+                )
                 with self.subTest(mutation=mutation):
-                    self.assertEqual(status, 2)
-                    self.assertEqual(stdout, "")
-                    self.assertIn("G12 LINK A/B BLOCKED:", stderr)
-                    self.assertFalse(paths["output"].exists())
+                    self.assertEqual(status, 0)
+                    self.assertIn("status=blocked", stdout)
+                    self.assertEqual(stderr, "")
+                    self.assertEqual(enforce_status, 2)
+                    self.assertEqual(enforce_stdout, "")
+                    self.assertIn("G12 LINK A/B BLOCKED:", enforce_stderr)
+                    parsed = json.loads(output)
+                    self.assertEqual(parsed["status"], "blocked")
+                    self.assertEqual(parsed["measurements"]["pairs"], [])
+
+    def test_link_failure_retains_all_measurements_before_enforcement_blocks(self) -> None:
+        with TemporaryDirectory() as directory:
+            paths = write_valid_fixture(Path(directory))
+            paths["linked_symbols"].write_text(
+                "_talaria_launch_link_anchor\n", encoding="utf-8"
+            )
+            status, stdout, stderr = self.run_main(paths)
+            output = paths["output"].read_text(encoding="utf-8")
+            enforce_status, _, enforce_stderr = self.run_enforce(paths["output"])
+
+        self.assertEqual(status, 0)
+        self.assertIn("status=blocked", stdout)
+        self.assertEqual(stderr, "")
+        parsed = json.loads(output)
+        self.assertEqual(parsed["measurements"]["validated_pair_count"], 10)
+        self.assertEqual(len(parsed["measurements"]["pairs"]), 10)
+        self.assertEqual(parsed["link_contrast"]["status"], "blocked")
+        self.assertEqual(enforce_status, 2)
+        self.assertIn("G12 LINK A/B BLOCKED:", enforce_stderr)
+
+    def test_tampered_or_unknown_analysis_evidence_blocks_enforcement(self) -> None:
+        for mutation in ("root_status", "nested_status", "check_type", "unknown_key"):
+            with TemporaryDirectory() as directory:
+                paths = write_valid_fixture(Path(directory))
+                status, _, _ = self.run_main(paths)
+                self.assertEqual(status, 0)
+                document = json.loads(paths["output"].read_text(encoding="utf-8"))
+                if mutation == "root_status":
+                    document["status"] = "blocked"
+                elif mutation == "nested_status":
+                    document["link_contrast"]["status"] = "blocked"
+                elif mutation == "check_type":
+                    document["link_contrast"]["checks"][
+                        "control_has_one_launch_anchor"
+                    ] = []
+                else:
+                    document["unexpected"] = True
+                paths["output"].write_text(
+                    json.dumps(document) + "\n", encoding="utf-8"
+                )
+                enforce_status, enforce_stdout, enforce_stderr = self.run_enforce(
+                    paths["output"]
+                )
+            with self.subTest(mutation=mutation):
+                self.assertEqual(enforce_status, 2)
+                self.assertEqual(enforce_stdout, "")
+                self.assertIn("G12 LINK A/B BLOCKED:", enforce_stderr)
 
     def test_unwritable_output_blocks(self) -> None:
         with TemporaryDirectory() as directory:
@@ -421,14 +659,14 @@ class CommandLineTests(unittest.TestCase):
             status, stdout, stderr = self.run_main(paths)
         self.assertEqual(status, 2)
         self.assertEqual(stdout, "")
-        self.assertIn("could not be written", stderr)
+        self.assertIn("could not be retained", stderr)
 
     def test_explicit_empty_argv_is_not_replaced_with_process_arguments(self) -> None:
         stderr = StringIO()
         with redirect_stderr(stderr), self.assertRaises(SystemExit) as context:
             analyzer.main([])
         self.assertEqual(context.exception.code, 2)
-        self.assertIn("--evidence-dir", stderr.getvalue())
+        self.assertIn("render-link", stderr.getvalue())
 
 
 if __name__ == "__main__":
