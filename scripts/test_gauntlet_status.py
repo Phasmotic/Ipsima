@@ -276,6 +276,9 @@ class GitHubPRCoreWorkflowTests(unittest.TestCase):
 
     def test_core_accepts_only_exact_subset_sentinel(self) -> None:
         workflow = self.source()
+        mkdir_index = workflow.index("mkdir -p .gauntlet")
+        gauntlet_index = workflow.index("bash scripts/gauntlet.sh --github-pr")
+        self.assertLess(mkdir_index, gauntlet_index)
         self.assertIn("grep -Fx 'G1–G5 GREEN'", workflow)
         self.assertIn("TIER A GREEN|GAUNTLET GREEN", workflow)
 

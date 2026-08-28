@@ -87,6 +87,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          mkdir -p .gauntlet
           bash scripts/gauntlet.sh --github-pr | tee .gauntlet/pr-g1-g5.log
           mapfile -t green_markers < <(grep -Fx 'G1–G5 GREEN' .gauntlet/pr-g1-g5.log)
           [ "${#green_markers[@]}" -eq 1 ]
