@@ -198,6 +198,14 @@ The macOS runner inventory supplies SwiftFormat at the required version. SwiftLi
 XcodeGen are not assumed from runner state; the gauntlet installs and verifies their pinned
 artifacts explicitly. Tier B remains authoritative for Apple-platform compilation and tests.
 
+Linux G4 invokes the digest-verified SwiftFormat 0.62.1 binary in verbose lint mode. During the
+Phase 0 closure PR, the same source first passed and then reproduced exit 139 in both permitted
+quiet-mode attempts on GitHub-hosted Linux, while local Linux and authoritative macOS G4 stayed
+green. This matches the failure shape of the open static-Linux-binary report
+`swiftlang/swift#77841`. Verbose mode changes only captured diagnostics: the version, digest,
+configuration, source inputs, formatting rules, and fail-closed exit classification remain the
+same, and the verbose evidence remains private in `.gauntlet/`.
+
 XcodeGen does not publish a verified Linux executable for the pinned release. Local G6 therefore
 always reports `BLOCKED` instead of trusting an arbitrary executable found on `PATH` by its
 self-reported version. An authoritative G6 result comes only from the digest-verified official

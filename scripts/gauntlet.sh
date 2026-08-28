@@ -828,7 +828,11 @@ g4() {
 
     format_rc=""
     if ! {
-        "$swiftformat_bin" --lint --quiet Packages/HermesKit App Tests
+        # The static Linux release binary can terminate with SIGSEGV in its
+        # quiet execution path on otherwise healthy hosts (swiftlang/swift#77841).
+        # Verbose mode preserves the same lint rules, inputs, and exit contract
+        # while also leaving useful private evidence if the process fails.
+        "$swiftformat_bin" --lint --verbose Packages/HermesKit App Tests
         format_rc=$?
     } >"$ART/g4-swiftformat.log" 2>&1; then
         record G4 BLOCKED "could not capture SwiftFormat evidence"
