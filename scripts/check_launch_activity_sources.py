@@ -51,6 +51,7 @@ RULES = (
         "SCNetworkReachabilityCreateWithName",
         re.compile(r"\bSCNetworkReachabilityCreateWithName\s*\("),
         "reachability",
+        required_in_factory=False,
     ),
     ConstructionRule(
         "SCNetworkReachabilityCreateWithAddress",

@@ -3,9 +3,6 @@ import HermesKit
 #if canImport(Network)
     import Network
 #endif
-#if canImport(SystemConfiguration)
-    import SystemConfiguration
-#endif
 
 /// The sole Talaria source boundary for resources that can add launch work.
 ///
@@ -41,15 +38,6 @@ enum AuditedLaunchResourceFactory {
         static func networkPathMonitor() -> NWPathMonitor {
             LaunchActivityAudit.shared.recordTalariaOwnedConstruction(.networkPathMonitor)
             return NWPathMonitor()
-        }
-    #endif
-
-    #if canImport(SystemConfiguration)
-        static func reachability(
-            hostName: String
-        ) -> SCNetworkReachability? {
-            LaunchActivityAudit.shared.recordTalariaOwnedConstruction(.reachability)
-            return SCNetworkReachabilityCreateWithName(nil, hostName)
         }
     #endif
 
