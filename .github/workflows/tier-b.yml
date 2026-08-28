@@ -301,86 +301,9 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
-      - name: Collect deterministic launch-structure replacement evidence
-        run: |
-          set -euo pipefail
-          launch_structure_blocked() {
-            echo "G12 LAUNCH-STRUCTURE BLOCKED — $1" >&2
-            exit 2
-          }
-          python3 -B scripts/check_launch_structure.py resolve-app \
-            --build-settings-json .gauntlet/g7-build-settings.json \
-            --output .gauntlet/g12-app-path.txt
-          test -s .gauntlet/g12-app-path.txt \
-            || launch_structure_blocked "resolved app path evidence is empty"
-          IFS= read -r G12_APP_BUNDLE < .gauntlet/g12-app-path.txt \
-            || launch_structure_blocked "resolved app path could not be read"
-          case "$G12_APP_BUNDLE" in
-            "$GITHUB_WORKSPACE"/.gauntlet/DerivedData/*/Talaria.app) ;;
-            *) launch_structure_blocked "resolved app path escaped the expected build products" ;;
-          esac
-          xcrun simctl install "$SMALL_UDID" "$G12_APP_BUNDLE" \
-            >.gauntlet/g12-simctl-install.stdout \
-            2>.gauntlet/g12-simctl-install.stderr \
-            || launch_structure_blocked "simulator install failed"
-          test ! -s .gauntlet/g12-simctl-install.stderr \
-            || launch_structure_blocked "simulator install emitted stderr"
-          mkdir -p .gauntlet/g12-dyld
-          for index in 01 02 03 04 05 06 07 08 09 10; do
-            child_stdout="$GITHUB_WORKSPACE/.gauntlet/g12-dyld/$index.stdout"
-            child_stderr="$GITHUB_WORKSPACE/.gauntlet/g12-dyld/$index.stderr"
-            launch_stdout=".gauntlet/g12-dyld/$index.launch"
-            launch_stderr=".gauntlet/g12-dyld/$index.launch.stderr"
-            : > "$child_stdout"
-            : > "$child_stderr"
-            if ! SIMCTL_CHILD_DYLD_PRINT_STATISTICS=1 xcrun simctl launch \
-              --terminate-running-process \
-              --stdout="$child_stdout" \
-              --stderr="$child_stderr" \
-              "$SMALL_UDID" dev.schonfeld.talaria.app \
-              >"$launch_stdout" 2>"$launch_stderr"; then
-              launch_structure_blocked "DYLD observation launch $index failed"
-            fi
-            test ! -s "$launch_stderr" \
-              || launch_structure_blocked "DYLD observation launch $index emitted simulator stderr"
-            observed=false
-            for attempt in {1..100}; do
-              if grep -qi 'total pre-main time' "$child_stdout" "$child_stderr"; then
-                observed=true
-                break
-              fi
-              sleep 0.1
-            done
-            [ "$observed" = true ] \
-              || launch_structure_blocked "DYLD observation $index produced no statistics"
-            xcrun simctl terminate "$SMALL_UDID" dev.schonfeld.talaria.app \
-              >/dev/null 2>.gauntlet/g12-dyld/$index.terminate.stderr \
-              || launch_structure_blocked "DYLD observation $index could not terminate the app"
-            test ! -s .gauntlet/g12-dyld/$index.terminate.stderr \
-              || launch_structure_blocked "DYLD observation $index termination emitted stderr"
-            cat "$child_stdout" "$child_stderr" \
-              > ".gauntlet/g12-dyld/$index.log"
-          done
-          dyld_arguments=()
-          for index in 01 02 03 04 05 06 07 08 09 10; do
-            dyld_arguments+=(
-              --dyld-statistics-log ".gauntlet/g12-dyld/$index.log"
-            )
-          done
-          python3 -B scripts/check_launch_structure.py collect \
-            --build-settings-json .gauntlet/g7-build-settings.json \
-            "${dyld_arguments[@]}" \
-            --output .gauntlet/g12-launch-structure-observed.json \
-            2>&1 | tee .gauntlet/g12-launch-structure-collect.log
-
-      - name: Upload sanitized deterministic launch-structure evidence
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: g12-launch-structure-${{ github.run_id }}
-          path: .gauntlet/g12-launch-structure-observed.json
-          if-no-files-found: error
-          retention-days: 90
-
+      # The authorized one-time A/B study is independent of the deterministic
+      # structure verdict. Collect it before that known prerequisite blocker so
+      # earlier build, test, and observation failures still suppress the study.
       - name: Run interleaved transport-link A/B diagnostic (10 pairs, no verdict)
         run: |
           set -euo pipefail
@@ -491,6 +414,86 @@ jobs:
         with:
           name: g12-link-ab-${{ github.run_id }}
           path: .gauntlet/g12-link-ab-analysis.json
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Collect deterministic launch-structure replacement evidence
+        run: |
+          set -euo pipefail
+          launch_structure_blocked() {
+            echo "G12 LAUNCH-STRUCTURE BLOCKED — $1" >&2
+            exit 2
+          }
+          python3 -B scripts/check_launch_structure.py resolve-app \
+            --build-settings-json .gauntlet/g7-build-settings.json \
+            --output .gauntlet/g12-app-path.txt
+          test -s .gauntlet/g12-app-path.txt \
+            || launch_structure_blocked "resolved app path evidence is empty"
+          IFS= read -r G12_APP_BUNDLE < .gauntlet/g12-app-path.txt \
+            || launch_structure_blocked "resolved app path could not be read"
+          case "$G12_APP_BUNDLE" in
+            "$GITHUB_WORKSPACE"/.gauntlet/DerivedData/*/Talaria.app) ;;
+            *) launch_structure_blocked "resolved app path escaped the expected build products" ;;
+          esac
+          xcrun simctl install "$SMALL_UDID" "$G12_APP_BUNDLE" \
+            >.gauntlet/g12-simctl-install.stdout \
+            2>.gauntlet/g12-simctl-install.stderr \
+            || launch_structure_blocked "simulator install failed"
+          test ! -s .gauntlet/g12-simctl-install.stderr \
+            || launch_structure_blocked "simulator install emitted stderr"
+          mkdir -p .gauntlet/g12-dyld
+          for index in 01 02 03 04 05 06 07 08 09 10; do
+            child_stdout="$GITHUB_WORKSPACE/.gauntlet/g12-dyld/$index.stdout"
+            child_stderr="$GITHUB_WORKSPACE/.gauntlet/g12-dyld/$index.stderr"
+            launch_stdout=".gauntlet/g12-dyld/$index.launch"
+            launch_stderr=".gauntlet/g12-dyld/$index.launch.stderr"
+            : > "$child_stdout"
+            : > "$child_stderr"
+            if ! SIMCTL_CHILD_DYLD_PRINT_STATISTICS=1 xcrun simctl launch \
+              --terminate-running-process \
+              --stdout="$child_stdout" \
+              --stderr="$child_stderr" \
+              "$SMALL_UDID" dev.schonfeld.talaria.app \
+              >"$launch_stdout" 2>"$launch_stderr"; then
+              launch_structure_blocked "DYLD observation launch $index failed"
+            fi
+            test ! -s "$launch_stderr" \
+              || launch_structure_blocked "DYLD observation launch $index emitted simulator stderr"
+            observed=false
+            for attempt in {1..100}; do
+              if grep -qi 'total pre-main time' "$child_stdout" "$child_stderr"; then
+                observed=true
+                break
+              fi
+              sleep 0.1
+            done
+            [ "$observed" = true ] \
+              || launch_structure_blocked "DYLD observation $index produced no statistics"
+            xcrun simctl terminate "$SMALL_UDID" dev.schonfeld.talaria.app \
+              >/dev/null 2>.gauntlet/g12-dyld/$index.terminate.stderr \
+              || launch_structure_blocked "DYLD observation $index could not terminate the app"
+            test ! -s .gauntlet/g12-dyld/$index.terminate.stderr \
+              || launch_structure_blocked "DYLD observation $index termination emitted stderr"
+            cat "$child_stdout" "$child_stderr" \
+              > ".gauntlet/g12-dyld/$index.log"
+          done
+          dyld_arguments=()
+          for index in 01 02 03 04 05 06 07 08 09 10; do
+            dyld_arguments+=(
+              --dyld-statistics-log ".gauntlet/g12-dyld/$index.log"
+            )
+          done
+          python3 -B scripts/check_launch_structure.py collect \
+            --build-settings-json .gauntlet/g7-build-settings.json \
+            "${dyld_arguments[@]}" \
+            --output .gauntlet/g12-launch-structure-observed.json \
+            2>&1 | tee .gauntlet/g12-launch-structure-collect.log
+
+      - name: Upload sanitized deterministic launch-structure evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: g12-launch-structure-${{ github.run_id }}
+          path: .gauntlet/g12-launch-structure-observed.json
           if-no-files-found: error
           retention-days: 90
 

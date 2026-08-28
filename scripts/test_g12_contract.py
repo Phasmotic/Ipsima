@@ -39,7 +39,7 @@ class G12ContractTests(unittest.TestCase):
         self.assertNotIn("G12 COLD-LAUNCH FAIL", observer)
 
         start = workflow.index("Preserve G12 launch observations — STOOD DOWN, no verdict")
-        end = workflow.index("Collect deterministic launch-structure replacement evidence", start)
+        end = workflow.index("Upload sanitized G12 per-iteration observation", start)
         section = workflow[start:end]
         self.assertEqual(section.count("xcresulttool get test-results metrics"), 2)
         self.assertEqual(section.count("--schema-version 0.1.0"), 2)
@@ -114,6 +114,7 @@ class G12ContractTests(unittest.TestCase):
         analyzer = ANALYZER.read_text(encoding="utf-8")
         launch_test = LINK_AB_TEST.read_text(encoding="utf-8")
         project = PROJECT.read_text(encoding="utf-8")
+        workflow = WORKFLOW.read_text(encoding="utf-8")
 
         self.assertIn("PAIR_COUNT = 10", analyzer)
         self.assertIn('["control", "linked"] if index % 2 == 1', analyzer)
@@ -130,6 +131,13 @@ class G12ContractTests(unittest.TestCase):
         self.assertIn("Talaria-LinkAB:", project)
         self.assertIn("TALARIA_LINK_TRANSPORT", project)
         self.assertIn("Talaria-LinkMap-$(CURRENT_ARCH).txt", project)
+        observation_upload = workflow.index("Upload sanitized G12 per-iteration observation")
+        study_start = workflow.index("Run interleaved transport-link A/B diagnostic")
+        study_upload = workflow.index("Upload sanitized transport-link A/B evidence")
+        structure = workflow.index("Collect deterministic launch-structure replacement evidence")
+        self.assertLess(observation_upload, study_start)
+        self.assertLess(study_start, study_upload)
+        self.assertLess(study_upload, structure)
 
     def test_rearm_contract_is_complete_and_blocks_p2_closure(self) -> None:
         for path in (BRIEF, GOVERNANCE):
