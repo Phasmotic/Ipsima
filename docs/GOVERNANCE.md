@@ -41,6 +41,10 @@ A gate is never weakened to make it pass. Missing prerequisites and indeterminat
 `BLOCKED`, never silent skips or passes. A phase can close only after its required Tier A and
 Tier B gates are green, with the run evidence linked from the pull request.
 
+The automatic pull-request G1–G5 workflow is advisory Stage 1 feedback. It is not local Tier A,
+Tier B, phase evidence, or a green sentinel, and it is not a required branch-protection context.
+Those limits remain visible until ADR-0002's trusted Stage 2 attestor is implemented and proven.
+
 ### Checkpoints are not green sentinels
 
 A checkpoint commit may be made while a gate is honestly red when that failure is the work being
@@ -123,13 +127,15 @@ Capture and gate diagnostics follow the same rule. They emit bounded reason code
 status markers, never input-derived values. Local raw evidence is used only for verification and
 is not quoted into public audit prose.
 
-## Tier A launcher and native-toolchain deviation
+## Local Tier A launcher and native-toolchain deviation
 
-Tier A is supported only through PowerShell's `scripts/gauntlet.ps1` launcher. That launcher
+Local Tier A is supported only through PowerShell's `scripts/gauntlet.ps1` launcher. That launcher
 enters the Ubuntu distribution with `wsl.exe`, translates the repository path without building
 a shell command string, and marks the expected launcher namespace. Direct execution of
 `scripts/gauntlet.sh`, entry through an Ubuntu shortcut, and entry through Git Bash are blocked
 because launcher-specific WSL namespaces can disagree about installed tools and live services.
+The only direct-Bash mode is `--github-pr` inside the SHA-pinned reusable workflow on a validated
+GitHub-hosted runner; setting WSL or caller-chosen marker variables cannot select that mode.
 
 The original brief specified a Linux container. This machine cannot provide a usable Docker
 daemon, so Tier A instead runs the Swift toolchain natively in WSL. The deviation preserves the
@@ -152,6 +158,26 @@ execution; the pinned `llvm-profdata` and `llvm-cov` from Swift 6.3.3 merge and 
 This preserves the required `swift test` execution and 85% source-line floor without relying on
 SwiftPM's faulty post-run coverage path.
 
+## Pull-request verification architecture
+
+[ADR-0002](adr/0002-source-bound-pull-request-gauntlet.md) governs two stages. Stage 1 runs the
+reusable Linux G1–G5 core on every pull request into `main`. The caller pins that core by full
+commit SHA; the core uses `ubuntu-24.04`, read-only contents permission, no secrets, no cache,
+`fetch-depth: 0`, and `persist-credentials: false`. Before candidate code executes, it proves the
+GitHub-hosted Linux x64 environment, Ubuntu version, nominated merge SHA, complete non-shallow
+history, and exact Swift toolchain. The gauntlet rechecks those facts and can report only
+`G1–G5 GREEN` for the exact five-gate PASS inventory. It never calls G6 or Tier B and never emits a
+Tier A or full-gauntlet sentinel.
+
+Stage 1 remains advisory because candidate code can modify the gauntlet evaluator. Branch
+protection therefore has no required automated check yet. Stage 2 must provide trusted evaluator
+provenance, a full-SHA-pinned macOS core, and a default-branch `workflow_run` attestor before any
+aggregate becomes required. It arms when P1 lands, before later work, or immediately when the
+first outside contribution appears. The attestor must distinguish typed FAIL from BLOCKED despite
+first-failure job exits; missing or skipped evidence is BLOCKED, and BLOCKED must never map to a
+branch-protection-satisfying state. G12 cold launch remains advisory after Stage 2 until
+representative burn-in proves its retry contract stable.
+
 ## Toolchain parity and pins
 
 Tier A and Tier B must prove the following exact versions before using a tool. A cached binary is
@@ -160,7 +186,7 @@ checked against their published SHA-256 digest.
 
 | Tool | Required version | Tier parity contract |
 | --- | --- | --- |
-| Swift | 6.3.3 | Native WSL uses Swift 6.3.3; Tier B receives Swift 6.3.3 with Xcode 26.6. |
+| Swift | 6.3.3 | Native WSL and GitHub-hosted Ubuntu 24.04 prove Swift 6.3.3 exactly; Tier B receives it with Xcode 26.6. |
 | SwiftFormat | 0.62.1 | The Linux release asset is verified for Tier A; `macos-26` supplies the same version. |
 | SwiftLint | 0.65.0 | Digest-verified release assets provide the same version to Tier A and Tier B. |
 | gitleaks | 8.30.1 | The release asset is explicitly installed, digest-verified, and version-checked. |
@@ -180,6 +206,9 @@ temporary directories and compares recursive output hashes; the generated projec
 untracked.
 
 ## Tier B result evidence
+
+The current Tier B path remains the manual dispatch and correlation-token design below. ADR-0002's
+`workflow_run` attestor is accepted Stage 2 architecture, not an implemented alternative.
 
 Tier B uses two explicitly versioned GitHub CLI clients because their observable interfaces differ.
 Native WSL 2.45.0 performs dispatch, run selection, watching, and snapshot capture; the snapshot

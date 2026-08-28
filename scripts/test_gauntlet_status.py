@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import os
+import re
 import subprocess
 import tempfile
 import unittest
@@ -17,6 +18,7 @@ LAUNCHER_HELPERS = REPO / "scripts" / "gauntlet_launcher_helpers.ps1"
 LAUNCHER_TEST = REPO / "scripts" / "test_gauntlet_launcher.ps1"
 WORKFLOW = REPO / ".github" / "workflows" / "tier-b.yml"
 LINUX_CORE_WORKFLOW = REPO / ".github" / "workflows" / "linux-g1-g5-core.yml"
+PR_LINUX_WORKFLOW = REPO / ".github" / "workflows" / "pr-linux-g1-g5.yml"
 SHA_A = "a" * 40
 SHA_B = "b" * 40
 TOKEN = "talaria-" + "c" * 32
@@ -251,6 +253,7 @@ class GitHubPRCoreWorkflowTests(unittest.TestCase):
         self.assertIn("persist-credentials: false", workflow)
         self.assertNotIn("actions/cache", workflow)
         self.assertNotIn(".build/", workflow)
+        self.assertNotIn("continue-on-error", workflow)
 
     def test_pinned_core_proves_source_and_toolchain_before_candidate_code(self) -> None:
         workflow = self.source()
@@ -275,6 +278,84 @@ class GitHubPRCoreWorkflowTests(unittest.TestCase):
         workflow = self.source()
         self.assertIn("grep -Fx 'G1–G5 GREEN'", workflow)
         self.assertIn("TIER A GREEN|GAUNTLET GREEN", workflow)
+
+
+class GitHubPRCallerWorkflowTests(unittest.TestCase):
+    def source(self) -> str:
+        return PR_LINUX_WORKFLOW.read_text(encoding="utf-8")
+
+    def core_pin(self) -> str:
+        match = re.search(
+            r"^\s+uses: markschonfeld/Talaria/\.github/workflows/"
+            r"linux-g1-g5-core\.yml@([0-9a-f]{40})$",
+            self.source(),
+            re.MULTILINE,
+        )
+        self.assertIsNotNone(match)
+        return match.group(1)
+
+    def test_caller_is_pull_request_only_and_has_no_silent_reduction(self) -> None:
+        workflow = self.source()
+        trigger = workflow.split("permissions:", maxsplit=1)[0]
+        self.assertIn("on:\n  pull_request:", trigger)
+        self.assertIn("branches: [main]", trigger)
+        self.assertIn("opened", trigger)
+        self.assertIn("synchronize", trigger)
+        self.assertIn("reopened", trigger)
+        self.assertIn("ready_for_review", trigger)
+        self.assertNotIn("pull_request_target", workflow)
+        self.assertNotIn("workflow_run", trigger)
+        self.assertNotIn("workflow_dispatch", trigger)
+        self.assertNotIn("paths:", trigger)
+
+    def test_caller_is_advisory_read_only_uncached_and_secretless(self) -> None:
+        workflow = self.source()
+        self.assertIn("name: Advisory G1–G5", workflow)
+        self.assertEqual(workflow.count("contents: read"), 2)
+        self.assertNotIn("id-token:", workflow)
+        self.assertNotIn("secrets:", workflow)
+        self.assertNotIn("actions/cache", workflow)
+        self.assertNotIn("continue-on-error", workflow)
+        self.assertNotIn("runs-on:", workflow)
+        self.assertNotIn("steps:", workflow)
+        self.assertIn(
+            "group: pr-linux-g1-g5-${{ github.event.pull_request.number }}", workflow
+        )
+        self.assertIn("cancel-in-progress: true", workflow)
+
+    def test_caller_uses_one_literal_full_sha_core_reference(self) -> None:
+        workflow = self.source()
+        pin = self.core_pin()
+        self.assertEqual(workflow.count("uses:"), 1)
+        uses_line = next(line for line in workflow.splitlines() if "uses:" in line)
+        self.assertNotIn("@main", uses_line)
+        self.assertNotIn("${{", uses_line)
+
+        ancestor = subprocess.run(
+            ["git", "merge-base", "--is-ancestor", pin, "HEAD"],
+            cwd=REPO,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(ancestor.returncode, 0, ancestor.stdout + ancestor.stderr)
+        self.assertEqual(ancestor.stdout, "")
+        self.assertEqual(ancestor.stderr, "")
+
+        pinned_core = subprocess.run(
+            ["git", "show", f"{pin}:.github/workflows/linux-g1-g5-core.yml"],
+            cwd=REPO,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        )
+        self.assertEqual(
+            pinned_core.returncode, 0, pinned_core.stdout + pinned_core.stderr
+        )
+        self.assertEqual(pinned_core.stderr, "")
+        self.assertEqual(
+            pinned_core.stdout,
+            LINUX_CORE_WORKFLOW.read_text(encoding="utf-8"),
+        )
 
 
 class G4ClassificationTests(ShellClassifierTests):

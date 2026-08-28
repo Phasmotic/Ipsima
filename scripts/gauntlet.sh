@@ -418,6 +418,7 @@ g1() {
         scripts.test_check_xcode_log \
         scripts.test_gauntlet_status.GitHubPRModeTests \
         scripts.test_gauntlet_status.GitHubPRCoreWorkflowTests \
+        scripts.test_gauntlet_status.GitHubPRCallerWorkflowTests \
         >"$ART/g1-selftest.log" 2>&1
     if [ $? -ne 0 ]; then
         record G1 BLOCKED "G1 and Linux workflow self-tests failed (see .gauntlet/g1-selftest.log)"

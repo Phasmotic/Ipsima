@@ -81,6 +81,11 @@ Issues and pull requests are welcome. The gate policy in
 is never weakened to make a change pass. Signing, distribution, and formal upstream-adoption
 work remain hard-gated to P7.
 
+Pull requests into `main` receive an advisory GitHub-hosted Ubuntu check for G1–G5. It is fast
+feedback, not authoritative phase evidence or a required status check; the trusted-attestation
+path is the accepted but unimplemented Stage 2 of
+[ADR-0002](docs/adr/0002-source-bound-pull-request-gauntlet.md).
+
 ## Layout
 
 ```
@@ -95,6 +100,7 @@ Packages/HermesKit/Tests/HermesKitTests/Fixtures/
                        Sanitized golden JSON-RPC frame recordings (conformance substrate)
 scripts/gauntlet.ps1   PowerShell → WSL entry for Tier A; -TierB dispatches macOS CI
 scripts/gauntlet.sh    Internal native-Linux gate runner invoked by gauntlet.ps1
+.github/workflows/     SHA-pinned advisory PR Linux core/caller; manual authoritative Tier B
 ```
 
 ## The gauntlet
@@ -110,6 +116,11 @@ exactly; release assets are hash-verified. The native environment is version-pin
 container-hermetic, so Tier B remains authoritative. The final green sentinel requires every
 armed gate genuinely green; repair checkpoints may preserve explicitly named honest-red gates.
 A gate is never weakened to pass — see [governance](docs/GOVERNANCE.md).
+
+The advisory PR workflow reuses the same G1–G5 logic directly on `ubuntu-24.04`, after proving the
+exact merge checkout, complete Git history, hosted environment, and Swift toolchain. It uses no
+cache and reports `G1–G5 GREEN`, never Tier A or full-gauntlet green. G6 and all Apple-platform
+authority remain in the correlated macOS path.
 
 ## Planned security requirements
 
