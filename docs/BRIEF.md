@@ -3,9 +3,9 @@
 ## Authority and record
 
 Talaria is maintained in the public `markschonfeld/Talaria` repository. Preserve that exact
-capitalization in remotes, workflows, and documentation. The public audit ledger is issue #2;
-pull request #1 is the review surface for the Phase 0 handoff and remains draft through audit
-repair closure and the remaining Phase 0 work.
+capitalization in remotes, workflows, and documentation. The public audit ledger is issue #2.
+Pull request #1 preserved and reviewed the recovered Phase 0 handoff, audit repair, and README
+correction; it merged into `main` at `5a48deb`.
 
 This file is the in-repository operating brief. Explicit owner or orchestrator decisions may
 revise it. Expensive-to-reconstruct findings and evidence belong in the repository, pull request,
@@ -16,6 +16,10 @@ Audit repair closed at `96df2d0`. The revised phase plan, pinned-source outbound
 and pre-code push architecture are now recorded in this brief, `docs/PROTOCOL.md`, and
 [ADR-0001](adr/0001-contentless-approval-push.md). P1 implementation has not begun and is outside
 this run.
+
+[ADR-0002](adr/0002-source-bound-pull-request-gauntlet.md) records the accepted two-stage PR
+verification architecture. Only advisory Stage 1 Linux G1–G5 is implemented now. Stage 2 and P1
+remain outside this run.
 
 ### Coordination record
 
@@ -185,7 +189,7 @@ One gauntlet invocation evaluates all gates in its tier. Missing prerequisites, 
 and indeterminate results are `BLOCKED`, never passes or silent skips. See
 `docs/GOVERNANCE.md` for exact tool pins and evidence rules.
 
-### Tier A — fast Linux feedback
+### Local Tier A — fast Linux feedback
 
 | Gate | Required evidence |
 | --- | --- |
@@ -196,7 +200,7 @@ and indeterminate results are `BLOCKED`, never passes or silent skips. See
 | G5 | Secret and source-hygiene scans report no findings and their canaries prove the scanners can fail. |
 | G6 | XcodeGen 2.46.0 generates twice in isolated temporary directories with identical recursive output hashes. The generated project stays untracked. |
 
-Tier A runs the Swift toolchain natively in Ubuntu entered only through PowerShell's
+Local Tier A runs the Swift toolchain natively in Ubuntu entered only through PowerShell's
 `scripts/gauntlet.ps1`. The original container requirement was a means of version pinning, not the
 quality property itself. Native execution preserves exact version checks and the fast Linux loop,
 but loses container hermeticity: system libraries, packages, caches, and environment state can
@@ -206,6 +210,20 @@ No verified Linux executable is published for the pinned XcodeGen release. Local
 fails closed as `BLOCKED`; its authoritative result comes from the digest-verified macOS asset in
 Tier B. G6 tests the observable property—two identical recursive output hashes—not a Git diff
 against a tracked generated project.
+
+### Advisory pull-request Linux subset
+
+Every pull request into `main` invokes a full-SHA-pinned reusable core on `ubuntu-24.04`. It proves
+the GitHub-hosted Linux x64 runner, nominated merge SHA, non-shallow history, no persisted checkout
+credential, and the exact Swift 6.3.3 toolchain before running G1–G5. No Swift, build-output,
+coverage, profile, or test-binary cache is used. Its only green wording is `G1–G5 GREEN`.
+
+This subset is advisory Stage 1 feedback. It is not Tier A, does not evaluate G6, cannot replace
+the correlated Tier B run, cannot close a phase, and is not a required status check. The complete
+two-stage design and its P1-or-outside-contribution arm point are in ADR-0002. Stage 2 must establish
+trusted evaluator provenance and PASS/FAIL/BLOCKED attestation before checks become required;
+BLOCKED can never be represented by a branch-protection-satisfying status. G12 cold launch remains
+advisory after that transition until representative burn-in establishes stability.
 
 ### Tier B — authoritative Apple-platform CI
 
@@ -265,6 +283,9 @@ Every repair or phase objective uses one loop pass. A phase has a hard maximum o
 9. Inspect every image and record the G14 verdict.
 10. If visual review fails, repair the UI and return to step 3.
 11. If every armed gate passes, update the pull request evidence table and stop.
+
+The advisory pull-request G1–G5 result does not satisfy step 3 or step 6. The local and correlated
+authoritative paths remain required until ADR-0002 Stage 2 is implemented and proven.
 
 The audit itself and the deliberate proof that gates can fail are outside this convergence loop.
 During the inverted gate proof, the intended red result is the evidence; the deliberate defect is

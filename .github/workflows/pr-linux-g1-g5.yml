@@ -1,0 +1,21 @@
+name: pr-linux-g1-g5
+run-name: "Advisory G1–G5 · PR #${{ github.event.pull_request.number }}"
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-linux-g1-g5-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    name: Advisory G1–G5
+    permissions:
+      contents: read
+    uses: markschonfeld/Talaria/.github/workflows/linux-g1-g5-core.yml@f4b29749c8765249c82f7fbdf156229a371a4d61

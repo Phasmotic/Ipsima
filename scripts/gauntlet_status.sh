@@ -33,6 +33,88 @@ talaria_is_single_line() {
     [[ "$value" != *$'\n'* && "$value" != *$'\r'* ]]
 }
 
+talaria_classify_complete_git_history() {
+    talaria_classification_reset
+    local command_rc="${1-}" shallow_state="${2-}" stderr_state="${3-}"
+
+    if [ "$#" -ne 3 ] \
+        || ! talaria_is_exit_code "$command_rc" \
+        || { [ "$stderr_state" != "empty" ] && [ "$stderr_state" != "nonempty" ]; }; then
+        TALARIA_CLASS_DETAIL="complete-history proof received invalid evidence"
+    elif [ "$command_rc" != "0" ] || [ "$stderr_state" != "empty" ]; then
+        TALARIA_CLASS_DETAIL="could not determine whether the Git checkout is shallow"
+    elif [ "$shallow_state" != "false" ]; then
+        TALARIA_CLASS_DETAIL="G5 requires a complete, non-shallow Git history"
+    else
+        TALARIA_CLASS_STATUS="PASS"
+        TALARIA_CLASS_DETAIL="complete, non-shallow Git history verified"
+    fi
+}
+
+talaria_classify_github_pr_entry() {
+    talaria_classification_reset
+    local github_actions="${1-}" event_name="${2-}" runner_environment="${3-}"
+    local runner_os="${4-}" runner_arch="${5-}" repository="${6-}"
+    local github_ref="${7-}" github_sha="${8-}" head_rc="${9-}"
+    local head_sha="${10-}" head_stderr_state="${11-}" os_id="${12-}"
+    local os_version="${13-}" kernel_release="${14-}" machine="${15-}"
+    local wsl_state="${16-}"
+
+    if [ "$#" -ne 16 ]; then
+        TALARIA_CLASS_DETAIL="GitHub pull-request entry received an invalid evidence inventory"
+    elif [ "$github_actions" != "true" ] \
+        || [ "$event_name" != "pull_request" ] \
+        || [ "$runner_environment" != "github-hosted" ] \
+        || [ "$runner_os" != "Linux" ] \
+        || [ "$runner_arch" != "X64" ]; then
+        TALARIA_CLASS_DETAIL="G1-G5 PR mode requires a GitHub-hosted Linux x64 runner"
+    elif [ "$repository" != "markschonfeld/Talaria" ] \
+        || [[ ! "$github_ref" =~ ^refs/pull/[1-9][0-9]*/merge$ ]] \
+        || ! talaria_is_commit_sha "$github_sha"; then
+        TALARIA_CLASS_DETAIL="G1-G5 PR mode requires the canonical pull-request merge source"
+    elif ! talaria_is_exit_code "$head_rc" \
+        || [ "$head_rc" != "0" ] \
+        || ! talaria_is_commit_sha "$head_sha" \
+        || [ "$head_sha" != "$github_sha" ] \
+        || [ "$head_stderr_state" != "empty" ]; then
+        TALARIA_CLASS_DETAIL="checked-out commit does not match the GitHub pull-request source"
+    elif [ "$os_id" != "ubuntu" ] \
+        || [ "$os_version" != "24.04" ] \
+        || [ "$machine" != "x86_64" ]; then
+        TALARIA_CLASS_DETAIL="G1-G5 PR mode requires Ubuntu 24.04 x64"
+    elif [ "$wsl_state" != "absent" ] \
+        || [[ "${kernel_release,,}" == *microsoft* ]]; then
+        TALARIA_CLASS_DETAIL="G1-G5 PR mode cannot run through WSL"
+    else
+        TALARIA_CLASS_STATUS="PASS"
+        TALARIA_CLASS_DETAIL="GitHub-hosted Ubuntu 24.04 pull-request merge source verified"
+    fi
+}
+
+talaria_classify_g1_g5_inventory() {
+    talaria_classification_reset
+    local index gate status detail extra
+    local -a expected=(G1 G2 G3 G4 G5)
+    local -a rows=("$@")
+
+    if [ "$#" -ne 5 ]; then
+        TALARIA_CLASS_DETAIL="G1-G5 result inventory is incomplete or duplicated"
+        return 0
+    fi
+    for index in "${!expected[@]}"; do
+        IFS='|' read -r gate status detail extra <<<"${rows[$index]}"
+        if [ -n "${extra:-}" ] \
+            || [ "$gate" != "${expected[$index]}" ] \
+            || [ "$status" != "PASS" ] \
+            || [ -z "$detail" ]; then
+            TALARIA_CLASS_DETAIL="G1-G5 result inventory is not exactly five ordered PASS records"
+            return 0
+        fi
+    done
+    TALARIA_CLASS_STATUS="PASS"
+    TALARIA_CLASS_DETAIL="exact G1-G5 PASS inventory verified"
+}
+
 talaria_classify_g4() {
     talaria_classification_reset
     local format_rc="${1-}" lint_rc="${2-}" report_rc="${3-}" violation_count="${4-}"
