@@ -76,6 +76,13 @@ PUBLIC_HTTPS_ALLOWANCES = {
             _secure_url("tailscale.com"),
         }
     ),
+    "docs/GOVERNANCE.md": frozenset(
+        {
+            _secure_url(
+                "github.com/markschonfeld/Talaria/issues/2#issuecomment-5457754926"
+            )
+        }
+    ),
     "protocol/methods.json": frozenset(
         {_secure_url("github.com/NousResearch/hermes-agent.git")}
     ),

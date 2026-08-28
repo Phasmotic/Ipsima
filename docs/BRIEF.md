@@ -14,12 +14,12 @@ paths only and must exclude local environment details and sensitive data.
 
 Audit repair closed at `96df2d0`. The revised phase plan, pinned-source outbound-hook finding,
 and pre-code push architecture are now recorded in this brief, `docs/PROTOCOL.md`, and
-[ADR-0001](adr/0001-contentless-approval-push.md). P1 implementation has not begun and is outside
-this run.
+[ADR-0001](adr/0001-contentless-approval-push.md). P1.1 is merged; P1.2 transport is the current
+objective. REST/SSE, P1.3, and later objectives have not begun.
 
 [ADR-0002](adr/0002-source-bound-pull-request-gauntlet.md) records the accepted two-stage PR
-verification architecture. Only advisory Stage 1 Linux G1–G5 is implemented now. Stage 2 and P1
-remain outside this run.
+verification architecture. Only advisory Stage 1 Linux G1–G5 is implemented now. Later explicit
+instructions hold Stage 2 outside P1.2; it requires a separately authorized objective.
 
 ### Coordination record
 
@@ -109,7 +109,8 @@ connection list, an explanatory path for a first-time user with no gateway, and 
 registry with per-gateway profile rosters.
 
 P2 acceptance is demonstrable: a new user connects in under 60 seconds without typing a URL. If
-that cannot be shown, P2 is not complete.
+that cannot be shown, P2 is not complete. P2 also cannot close while G12 cold launch remains stood
+down; it must be re-specified, re-armed, and green under the contract below.
 
 ### P3 — Chat and approvals
 
@@ -247,7 +248,8 @@ the correlated Tier B run, cannot close a phase, and is not a required status ch
 two-stage design and its P1-or-outside-contribution arm point are in ADR-0002. Stage 2 must establish
 trusted evaluator provenance and PASS/FAIL/BLOCKED attestation before checks become required;
 BLOCKED can never be represented by a branch-protection-satisfying status. G12 cold launch remains
-advisory after that transition until representative burn-in establishes stability.
+stood down after that transition. Following its mandatory P2 re-arm, it remains advisory until
+representative burn-in establishes the new statistical contract's stability.
 
 ### Tier B — authoritative Apple-platform CI
 
@@ -258,12 +260,32 @@ advisory after that transition until representative burn-in establishes stabilit
 | G9 | watchOS app, watch widget, and watch UI smoke build and pass with zero warnings. |
 | G10 | Accessibility audits of every primary screen have no critical finding. |
 | G11 | The required light/dark, device-size, and Dynamic Type screenshot matrix is uploaded. |
-| G12 | Cold launch and live-stream responsiveness stay within the declared budgets. |
+| G12 | Cold launch uses the governed replacement coverage while its wall-clock instrument is stood down; live-stream responsiveness is enforced once that surface arms. |
 | G13 | An unsigned archive succeeds and proves the iOS widget, embedded watch app, and watch widget are present. |
 
-G12 cold launch is armed during audit repair. Its first closure measurement was 3.062 seconds
-against the strict `<3.0s` budget; the single permitted retry passed at 2.863 seconds over five
-samples. The threshold and measurement contract remain unchanged.
+G12 cold launch is **STOOD DOWN — never PASS or N/A** after a gate-specification defect was found.
+The application-launch subject exists, but the former strict mean-under-3.0-second instrument
+cannot reliably fail for the claimed reason: the retained ten-verdict history has median
+3.0482066832 seconds and six failures, while exact-SHA reruns moved by as much as 1.56285685
+seconds. All prior passes and failures remain measurements from that defective instrument, not
+certifications. The observer remains strict about evidence shape and preserves all five individual
+values, but emits no verdict.
+
+Current deterministic replacement coverage consists of DYLD pre-main rebase/binding/initializer
+ratchets; exact size ratchets for both the simulator app executor and `Talaria.debug.dylib`; a
+Mach-O load-closure and static-initializer audit over both images; and a first-draw assertion that
+no Talaria-owned URL session, reachability listener, or timer was created before the frame. A
+source contract prevents bypassing the audited constructors. No replacement uses an end-to-end
+wall-clock threshold.
+
+G12 cold launch re-arms in P2. Before collecting its baseline, write a detection floor (`>= X ms`
+at confidence `Y`), use a pinned known-good reference binary interleaved in the same job on the
+same runner and gate on median delta or ratio, retain at least ten individual xcresult measurements per run, and
+pre-register the formula plus a total false-fail budget of at most 1% per checkpoint including
+retry. Any absolute component needs at least 30 runner instances over at least seven days and must
+publish median, MAD, P95, and maximum. Shifts below the declared floor are advisory. The former
+one-retry rule acted as best-of-two sample selection, and XCTest already discards a built-in warmup;
+both facts must be incorporated into the re-armed statistical contract.
 
 By explicit orchestrator ruling, **G12 streaming is
 `N/A (no live stream or streaming UI to measure)`**. The clause has no subject before a real

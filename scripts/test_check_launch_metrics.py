@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import json
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from decimal import Decimal
@@ -13,10 +14,10 @@ from unittest.mock import patch
 from scripts import check_launch_metrics as checker
 
 
-PASS_MEASUREMENTS_JSON = (
+OBSERVED_MEASUREMENTS_JSON = (
     b"[1.905808042,1.913853959,1.977160208,2.41402925,2.26780575]"
 )
-FAIL_MEASUREMENTS_JSON = b"[3.123634,2.574230,3.181742,4.552391,4.226221]"
+SLOW_MEASUREMENTS_JSON = b"[3.123634,2.574230,3.181742,4.552391,4.226221]"
 
 VALID_METRICS_JSON = b"""[
   {
@@ -81,7 +82,7 @@ def configuration(document: list[object]) -> dict[str, object]:
 
 
 def metrics_json_with(measurements: bytes) -> bytes:
-    return VALID_METRICS_JSON.replace(PASS_MEASUREMENTS_JSON, measurements)
+    return VALID_METRICS_JSON.replace(OBSERVED_MEASUREMENTS_JSON, measurements)
 
 
 class ParseMetricsJSONTests(unittest.TestCase):
@@ -124,7 +125,7 @@ class ParseMetricsJSONTests(unittest.TestCase):
     def test_nonfinite_json_constants_block(self) -> None:
         for token in (b"NaN", b"Infinity", b"-Infinity"):
             raw = metrics_json_with(
-                PASS_MEASUREMENTS_JSON.replace(b"1.905808042", token, 1)
+                OBSERVED_MEASUREMENTS_JSON.replace(b"1.905808042", token, 1)
             )
             with self.subTest(token=token), self.assertRaises(
                 checker.EvidenceBlocked
@@ -170,45 +171,48 @@ class SchemaDigestTests(unittest.TestCase):
                 checker.verify_schema_bytes(raw, digest)  # type: ignore[arg-type]
 
 
-class LaunchMetricVerdictTests(unittest.TestCase):
-    def test_known_xcode_26_6_pass_mean(self) -> None:
+class LaunchMetricObserverTests(unittest.TestCase):
+    def test_known_xcode_26_6_mean_preserves_all_samples(self) -> None:
         evidence = checker.verify_metrics_document(valid_document())
         self.assertEqual(evidence.mean_seconds, Decimal("2.0957314418"))
-        self.assertTrue(evidence.within_budget)
-        self.assertEqual(len(evidence.measurements), 5)
+        self.assertEqual(
+            evidence.measurements,
+            (
+                Decimal("1.905808042"),
+                Decimal("1.913853959"),
+                Decimal("1.977160208"),
+                Decimal("2.41402925"),
+                Decimal("2.26780575"),
+            ),
+        )
 
-    def test_observed_floating_expansion_stays_below_budget(self) -> None:
+    def test_observed_floating_expansion_is_preserved(self) -> None:
         raw = VALID_METRICS_JSON.replace(b"1.977160208", b"1.9771602080000001")
         evidence = checker.verify_metrics_document(checker.parse_metrics_json(raw))
         self.assertEqual(evidence.mean_seconds, Decimal("2.09573144180000002"))
-        self.assertTrue(evidence.within_budget)
 
-    def test_known_failing_run_mean(self) -> None:
+    def test_formerly_failing_run_is_still_valid_observation(self) -> None:
         document = checker.parse_metrics_json(
-            metrics_json_with(FAIL_MEASUREMENTS_JSON)
+            metrics_json_with(SLOW_MEASUREMENTS_JSON)
         )
         evidence = checker.verify_metrics_document(document)
         self.assertEqual(evidence.mean_seconds, Decimal("3.5316436"))
-        self.assertFalse(evidence.within_budget)
 
-    def test_exact_budget_and_above_budget_fail(self) -> None:
-        for samples in (
-            b"[3,3,3,3,3]",
-            b"[3.000000001,3,3,3,3]",
-        ):
-            document = checker.parse_metrics_json(metrics_json_with(samples))
-            with self.subTest(samples=samples):
-                self.assertFalse(
-                    checker.verify_metrics_document(document).within_budget
-                )
+    def test_second_identity_and_one_sample_count_are_supported_strictly(self) -> None:
+        document = valid_document()
+        entry = test_entry(document)
+        entry["testIdentifier"] = checker.EXPECTED_AB_TEST_IDENTIFIER
+        entry["testIdentifierURL"] = checker.EXPECTED_AB_TEST_IDENTIFIER_URL
+        metric(document)["measurements"] = [Decimal("2.125")]
 
-    def test_mean_not_worst_sample_controls_budget(self) -> None:
-        document = checker.parse_metrics_json(
-            metrics_json_with(b"[2,2,2,2,4]")
+        evidence = checker.verify_metrics_document(
+            document, checker.LINK_AB_EXPECTATION
         )
-        evidence = checker.verify_metrics_document(document)
-        self.assertEqual(evidence.mean_seconds, Decimal("2.4"))
-        self.assertTrue(evidence.within_budget)
+        self.assertEqual(evidence.measurements, (Decimal("2.125"),))
+        self.assertEqual(evidence.mean_seconds, Decimal("2.125"))
+
+        with self.assertRaises(checker.EvidenceBlocked):
+            checker.verify_metrics_document(document)
 
 
 class ExactShapeTests(unittest.TestCase):
@@ -430,11 +434,12 @@ class CommandLineStatusTests(unittest.TestCase):
         expected_digest: str | None = None,
         create_schema: bool = True,
         create_metrics: bool = True,
-    ) -> tuple[int, str, str]:
+    ) -> tuple[int, str, str, str | None]:
         with TemporaryDirectory() as directory:
             root = Path(directory)
             schema_path = root / "schema.json"
             metrics_path = root / "metrics.json"
+            evidence_path = root / "evidence" / "launch.json"
             if create_schema:
                 schema_path.write_bytes(self.SCHEMA_BYTES)
             if create_metrics:
@@ -458,46 +463,69 @@ class CommandLineStatusTests(unittest.TestCase):
                         str(metrics_path),
                         "--schema-json",
                         str(schema_path),
+                        "--evidence-json",
+                        str(evidence_path),
                     ]
                 )
-            return status, stdout.getvalue(), stderr.getvalue()
+            evidence_text = (
+                evidence_path.read_text(encoding="utf-8")
+                if evidence_path.is_file()
+                else None
+            )
+            return status, stdout.getvalue(), stderr.getvalue(), evidence_text
 
-    def test_pass_status_is_zero(self) -> None:
-        status, stdout, stderr = self.run_main()
+    def test_observer_status_is_zero_and_evidence_is_sanitized(self) -> None:
+        status, stdout, stderr, evidence_text = self.run_main()
         self.assertEqual(status, 0)
-        self.assertIn("G12 COLD-LAUNCH PASS", stdout)
+        self.assertIn("G12 COLD-LAUNCH STOOD DOWN:", stdout)
+        self.assertIn("samples=[1.905808042,1.913853959,1.977160208", stdout)
         self.assertIn("2.0957314418", stdout)
         self.assertEqual(stderr, "")
+        self.assertIsNotNone(evidence_text)
+        evidence = json.loads(evidence_text or "")
+        self.assertEqual(evidence["status"], "stood_down")
+        self.assertEqual(evidence["sample_count"], 5)
+        self.assertEqual(evidence["mean_seconds"], "2.0957314418")
+        self.assertEqual(len(evidence["samples_seconds"]), 5)
+        self.assertNotIn("device", evidence_text or "")
+        self.assertNotIn("00000000-0000-0000-0000-000000000001", evidence_text or "")
 
-    def test_fail_status_is_one_for_above_and_equal_budget(self) -> None:
+    def test_every_valid_measurement_is_observed_without_a_threshold(self) -> None:
         for samples, expected_mean in (
-            (FAIL_MEASUREMENTS_JSON, "3.5316436"),
+            (SLOW_MEASUREMENTS_JSON, "3.5316436"),
             (b"[3,3,3,3,3]", "3"),
         ):
-            status, stdout, stderr = self.run_main(metrics_json_with(samples))
+            status, stdout, stderr, evidence_text = self.run_main(
+                metrics_json_with(samples)
+            )
             with self.subTest(samples=samples):
-                self.assertEqual(status, 1)
-                self.assertEqual(stdout, "")
-                self.assertIn("G12 COLD-LAUNCH FAIL", stderr)
-                self.assertIn(expected_mean, stderr)
+                self.assertEqual(status, 0)
+                self.assertIn("G12 COLD-LAUNCH STOOD DOWN:", stdout)
+                self.assertIn(f"mean={expected_mean} s", stdout)
+                self.assertEqual(stderr, "")
+                self.assertEqual(
+                    json.loads(evidence_text or "")["mean_seconds"], expected_mean
+                )
 
     def test_placeholder_status_is_two(self) -> None:
-        status, stdout, stderr = self.run_main(
+        status, stdout, stderr, evidence_text = self.run_main(
             expected_digest=checker.SCHEMA_SHA256_PLACEHOLDER
         )
         self.assertEqual(status, 2)
         self.assertEqual(stdout, "")
         self.assertIn("G12 COLD-LAUNCH BLOCKED", stderr)
         self.assertIn("placeholder", stderr)
+        self.assertIsNone(evidence_text)
 
     def test_digest_mismatch_status_is_two(self) -> None:
-        status, _, stderr = self.run_main(expected_digest="0" * 64)
+        status, _, stderr, evidence_text = self.run_main(expected_digest="0" * 64)
         self.assertEqual(status, 2)
         self.assertIn("mismatch", stderr)
+        self.assertIsNone(evidence_text)
 
     def test_missing_schema_or_metrics_file_status_is_two(self) -> None:
         for create_schema, create_metrics in ((False, True), (True, False)):
-            status, _, stderr = self.run_main(
+            status, _, stderr, evidence_text = self.run_main(
                 create_schema=create_schema, create_metrics=create_metrics
             )
             with self.subTest(
@@ -505,12 +533,14 @@ class CommandLineStatusTests(unittest.TestCase):
             ):
                 self.assertEqual(status, 2)
                 self.assertIn("G12 COLD-LAUNCH BLOCKED", stderr)
+                self.assertIsNone(evidence_text)
 
     def test_malformed_metrics_status_is_two(self) -> None:
-        status, stdout, stderr = self.run_main(b"not JSON")
+        status, stdout, stderr, evidence_text = self.run_main(b"not JSON")
         self.assertEqual(status, 2)
         self.assertEqual(stdout, "")
         self.assertIn("G12 COLD-LAUNCH BLOCKED", stderr)
+        self.assertIsNone(evidence_text)
 
     def test_explicit_empty_argv_is_not_replaced_with_process_arguments(self) -> None:
         stderr = StringIO()

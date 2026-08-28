@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail-closed, offline validation for G12 cold-launch evidence.
+"""Fail-closed, offline observation of stood-down G12 launch evidence.
 
 The caller must export both documents with the pinned Xcode toolchain and
 schema version before invoking this checker::
@@ -42,6 +42,11 @@ EXPECTED_TEST_IDENTIFIER_URL = (
     "test://com.apple.xcode/Talaria/TalariaUITests/"
     "LaunchPerformanceUITests/testLaunchMetricBaselineRecorded"
 )
+EXPECTED_AB_TEST_IDENTIFIER = "LinkABLaunchUITests/testOneLaunchObservation()"
+EXPECTED_AB_TEST_IDENTIFIER_URL = (
+    "test://com.apple.xcode/Talaria/TalariaLaunchABTests/"
+    "LinkABLaunchUITests/testOneLaunchObservation"
+)
 EXPECTED_METRIC_IDENTIFIER = (
     "com.apple.dt.XCTMetric_ApplicationLaunch-AppLaunch.duration"
 )
@@ -51,13 +56,12 @@ EXPECTED_METRIC_UNIT = "s"
 EXPECTED_CONFIGURATION_ID = "1"
 EXPECTED_CONFIGURATION_NAME = "Test Scheme Action"
 EXPECTED_MEASUREMENT_COUNT = 5
-LAUNCH_BUDGET_SECONDS = Decimal("3")
 
 _SHA256_PATTERN = re.compile(r"[0-9a-f]{64}\Z")
 
 
 class EvidenceBlocked(RuntimeError):
-    """The supplied evidence cannot produce a trustworthy cold-launch verdict."""
+    """The supplied evidence cannot produce a trustworthy launch observation."""
 
 
 class DuplicateJSONKeyError(ValueError):
@@ -73,9 +77,27 @@ class LaunchMetricEvidence:
     device_id: str
     device_name: str
 
-    @property
-    def within_budget(self) -> bool:
-        return self.mean_seconds < LAUNCH_BUDGET_SECONDS
+
+@dataclass(frozen=True)
+class MetricDocumentExpectation:
+    """Identity and sample-count contract for one exported metrics document."""
+
+    test_identifier: str
+    test_identifier_url: str
+    measurement_count: int
+
+
+STOOD_DOWN_EXPECTATION = MetricDocumentExpectation(
+    EXPECTED_TEST_IDENTIFIER,
+    EXPECTED_TEST_IDENTIFIER_URL,
+    EXPECTED_MEASUREMENT_COUNT,
+)
+
+LINK_AB_EXPECTATION = MetricDocumentExpectation(
+    EXPECTED_AB_TEST_IDENTIFIER,
+    EXPECTED_AB_TEST_IDENTIFIER_URL,
+    1,
+)
 
 
 def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -88,22 +110,22 @@ def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
 
 
 def _reject_nonfinite_json_number(token: str) -> Decimal:
-    raise EvidenceBlocked(f"metrics JSON contains non-finite number {token!r}")
+    raise EvidenceBlocked(f"JSON contains non-finite number {token!r}")
 
 
-def parse_metrics_json(raw: bytes) -> object:
-    """Decode metrics JSON strictly, preserving every number as ``Decimal``."""
+def parse_json_bytes(raw: bytes, label: str = "metrics JSON") -> object:
+    """Decode JSON strictly, preserving every number as ``Decimal``."""
 
     if not isinstance(raw, bytes):
-        raise EvidenceBlocked("metrics JSON input must be bytes")
+        raise EvidenceBlocked(f"{label} input must be bytes")
     if not raw:
-        raise EvidenceBlocked("metrics JSON is empty")
+        raise EvidenceBlocked(f"{label} is empty")
     try:
         text = raw.decode("utf-8", errors="strict")
     except UnicodeDecodeError as error:
-        raise EvidenceBlocked("metrics JSON is not valid UTF-8") from error
+        raise EvidenceBlocked(f"{label} is not valid UTF-8") from error
     if not text.strip():
-        raise EvidenceBlocked("metrics JSON contains only whitespace")
+        raise EvidenceBlocked(f"{label} contains only whitespace")
 
     try:
         return json.loads(
@@ -119,8 +141,14 @@ def parse_metrics_json(raw: bytes) -> object:
         raise EvidenceBlocked(str(error)) from error
     except (json.JSONDecodeError, DecimalException, ValueError) as error:
         raise EvidenceBlocked(
-            f"metrics JSON is invalid ({type(error).__name__})"
+            f"{label} is invalid ({type(error).__name__})"
         ) from error
+
+
+def parse_metrics_json(raw: bytes) -> object:
+    """Decode metrics JSON strictly, preserving every number as ``Decimal``."""
+
+    return parse_json_bytes(raw)
 
 
 def verify_schema_bytes(
@@ -210,8 +238,16 @@ def _exact_number(value: object, expected: Decimal, label: str) -> Decimal:
     return value
 
 
-def verify_metrics_document(document: object) -> LaunchMetricEvidence:
-    """Validate the exact Xcode 26.6 G12 document and calculate its mean."""
+def verify_metrics_document(
+    document: object,
+    expectation: MetricDocumentExpectation = STOOD_DOWN_EXPECTATION,
+) -> LaunchMetricEvidence:
+    """Validate an exact Xcode 26.6 launch document and calculate its mean."""
+
+    if not isinstance(expectation, MetricDocumentExpectation):
+        raise EvidenceBlocked("metrics expectation is invalid")
+    if expectation.measurement_count <= 0:
+        raise EvidenceBlocked("expected measurement count must be positive")
 
     test_entry = _singleton_list(document, "metrics JSON root")
     test = _object_with_exact_keys(
@@ -220,11 +256,11 @@ def verify_metrics_document(document: object) -> LaunchMetricEvidence:
         "metrics test entry",
     )
     _exact_string(
-        test["testIdentifier"], EXPECTED_TEST_IDENTIFIER, "testIdentifier"
+        test["testIdentifier"], expectation.test_identifier, "testIdentifier"
     )
     _exact_string(
         test["testIdentifierURL"],
-        EXPECTED_TEST_IDENTIFIER_URL,
+        expectation.test_identifier_url,
         "testIdentifierURL",
     )
 
@@ -309,9 +345,9 @@ def verify_metrics_document(document: object) -> LaunchMetricEvidence:
     raw_measurements = metric["measurements"]
     if not isinstance(raw_measurements, list):
         raise EvidenceBlocked("measurements must be an array")
-    if len(raw_measurements) != EXPECTED_MEASUREMENT_COUNT:
+    if len(raw_measurements) != expectation.measurement_count:
         raise EvidenceBlocked(
-            f"measurements must contain exactly {EXPECTED_MEASUREMENT_COUNT} samples, "
+            f"measurements must contain exactly {expectation.measurement_count} samples, "
             f"found {len(raw_measurements)}"
         )
 
@@ -327,7 +363,7 @@ def verify_metrics_document(document: object) -> LaunchMetricEvidence:
 
     try:
         mean_seconds = sum(measurements, Decimal("0")) / Decimal(
-            EXPECTED_MEASUREMENT_COUNT
+            expectation.measurement_count
         )
     except DecimalException as error:
         raise EvidenceBlocked("measurements cannot produce a finite mean") from error
@@ -356,7 +392,37 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--metrics-json", type=Path, required=True)
     parser.add_argument("--schema-json", type=Path, required=True)
+    parser.add_argument("--evidence-json", type=Path, required=True)
     return parser.parse_args(argv)
+
+
+def _decimal_text(value: Decimal) -> str:
+    """Return exact, non-exponential text suitable for durable evidence."""
+
+    return format(value, "f")
+
+
+def _write_observer_evidence(path: Path, evidence: LaunchMetricEvidence) -> None:
+    document = {
+        "instrument": "XCTApplicationLaunchMetric",
+        "mean_seconds": _decimal_text(evidence.mean_seconds),
+        "sample_count": len(evidence.measurements),
+        "samples_seconds": [
+            _decimal_text(measurement) for measurement in evidence.measurements
+        ],
+        "status": "stood_down",
+    }
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(document, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+            newline="\n",
+        )
+    except OSError as error:
+        raise EvidenceBlocked(
+            f"observer evidence could not be written ({type(error).__name__})"
+        ) from error
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -366,22 +432,15 @@ def main(argv: list[str] | None = None) -> int:
         verify_schema_bytes(schema_bytes)
         metrics_bytes = _read_bytes(arguments.metrics_json, "metrics JSON")
         evidence = verify_metrics_document(parse_metrics_json(metrics_bytes))
+        _write_observer_evidence(arguments.evidence_json, evidence)
     except EvidenceBlocked as error:
         print(f"G12 COLD-LAUNCH BLOCKED: {error}", file=sys.stderr)
         return 2
 
-    if not evidence.within_budget:
-        print(
-            "G12 COLD-LAUNCH FAIL: XCTApplicationLaunchMetric mean "
-            f"{evidence.mean_seconds} s is not below {LAUNCH_BUDGET_SECONDS} s",
-            file=sys.stderr,
-        )
-        return 1
-
+    samples = ",".join(_decimal_text(value) for value in evidence.measurements)
     print(
-        "G12 COLD-LAUNCH PASS: XCTApplicationLaunchMetric mean "
-        f"{evidence.mean_seconds} s is below {LAUNCH_BUDGET_SECONDS} s "
-        f"({EXPECTED_MEASUREMENT_COUNT} samples)"
+        "G12 COLD-LAUNCH STOOD DOWN: XCTApplicationLaunchMetric observer "
+        f"samples=[{samples}] mean={_decimal_text(evidence.mean_seconds)} s"
     )
     return 0
 

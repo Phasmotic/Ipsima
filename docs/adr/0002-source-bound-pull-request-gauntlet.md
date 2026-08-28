@@ -3,7 +3,8 @@
 - Status: Accepted; Stage 1 authorized now, Stage 2 accepted but not yet implemented
 - Date: 2026-08-27
 - Decision baseline: `main` at `5a48deb`
-- Stage 2 arm point: P1 landing, or the first outside contribution if earlier
+- Stage 2 arm point: separately authorized after the current P1.2 objective, or the first outside
+  contribution if earlier
 
 ## Context
 
@@ -95,16 +96,17 @@ The attestor publishes stable aggregate contexts with these semantics:
 
 After deliberate inversion canaries prove those mappings and representative runs establish
 stability, the Linux G1–G5 aggregate and deterministic Tier B aggregate become required checks on
-`main`. Individual shards remain diagnostic. G12 cold launch stays advisory even then until a
-representative burn-in proves its retry contract stable. G11, G12 streaming, and G14 retain their
-governed N/A state until their real streaming-surface arm point; applicability is named and never
-reported as PASS.
+`main`. Individual shards remain diagnostic. G12 cold launch is currently stood down for the
+gate-specification defect recorded in `docs/GOVERNANCE.md`; after its mandatory P2 re-arm it stays
+advisory until representative burn-in proves the replacement statistical contract stable. G11,
+G12 streaming, and G14 retain their governed N/A state until their real streaming-surface arm
+point; applicability is named and never reported as PASS.
 
-Stage 2 arms when P1 lands, before work proceeds beyond that landing. P1 materially expands the
-HermesKit, test, and gate surface, so retrofitting trusted evaluation becomes more expensive after
-that boundary. An outside contribution before P1 immediately preempts this schedule and arms Stage
-2 because candidate-controlled evaluation then crosses the trust boundary the attestor exists to
-defend.
+The accepted design originally armed Stage 2 at P1 landing. Later explicit instructions held it
+outside both P1.1 and P1.2; it therefore requires a separately authorized objective before work
+moves beyond the current P1.2 boundary. An outside contribution immediately preempts this schedule
+and arms Stage 2 because candidate-controlled evaluation then crosses the trust boundary the
+attestor exists to defend.
 
 ### Fork posture
 

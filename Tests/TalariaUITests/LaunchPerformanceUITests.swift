@@ -1,8 +1,8 @@
 import XCTest
 
-/// G12 — record exactly five official cold-launch samples in the result
-/// bundle. The fail-closed Tier B checker enforces the absolute 3.0 s budget
-/// over these samples. It does not certify G12's separate streaming clause.
+/// Retain exactly five application-launch observations while G12 cold launch is
+/// stood down for re-specification. The fail-closed Tier B checker validates and
+/// preserves every sample but cannot emit a performance verdict.
 final class LaunchPerformanceUITests: XCTestCase {
     @MainActor
     func testLaunchMetricBaselineRecorded() {

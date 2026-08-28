@@ -42,6 +42,10 @@ targets:
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
         SWIFT_STRICT_CONCURRENCY: complete
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) TALARIA_LINK_TRANSPORT"
+        OTHER_LDFLAGS: "$(inherited) -Wl,-u,_talaria_launch_link_anchor"
+        LD_GENERATE_MAP_FILE: YES
+        LD_MAP_FILE_PATH: "$(PROJECT_TEMP_DIR)/Talaria-LinkMap-$(CURRENT_ARCH).txt"
 
   TalariaWidgets:
     type: app-extension
@@ -122,6 +126,15 @@ targets:
       - target: Talaria
       - sdk: AppIntents.framework
 
+  TalariaLaunchABTests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - Tests/TalariaLaunchABTests
+    dependencies:
+      - target: Talaria
+      - sdk: AppIntents.framework
+
   TalariaWatchUITests:
     type: bundle.ui-testing
     platform: watchOS
@@ -147,6 +160,14 @@ schemes:
     test:
       targets:
         - TalariaUITests
+
+  Talaria-LinkAB:
+    build:
+      targets:
+        Talaria: all
+    test:
+      targets:
+        - TalariaLaunchABTests
 
   Talaria-Watch:
     build:

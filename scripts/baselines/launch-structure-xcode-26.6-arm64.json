@@ -1,0 +1,11 @@
+{
+  "derivation": {
+    "binary_ceiling": "exact observed bytes",
+    "timing_ceiling": "max baseline observed sample + max(1 ms, 25% baseline median)"
+  },
+  "reason": "Replace this placeholder only with reviewed Xcode 26.6 arm64 collector evidence.",
+  "schema_version": 1,
+  "status": "placeholder",
+  "target": "Talaria",
+  "toolchain": "Xcode 26.6 / iOS Simulator / arm64"
+}

@@ -4,24 +4,53 @@ import unittest
 
 REPO = Path(__file__).resolve().parent.parent
 LAUNCH_TEST = REPO / "Tests" / "TalariaUITests" / "LaunchPerformanceUITests.swift"
+LAUNCH_AUDIT_TEST = REPO / "Tests" / "TalariaUITests" / "LaunchActivityAuditUITests.swift"
+LINK_AB_TEST = REPO / "Tests" / "TalariaLaunchABTests" / "LinkABLaunchUITests.swift"
 CONTENT_VIEW = REPO / "App" / "Talaria" / "ContentView.swift"
 WORKFLOW = REPO / ".github" / "workflows" / "tier-b.yml"
-CHECKER = REPO / "scripts" / "check_launch_metrics.py"
+OBSERVER = REPO / "scripts" / "check_launch_metrics.py"
+STRUCTURE = REPO / "scripts" / "check_launch_structure.py"
+SOURCE_AUDIT = REPO / "scripts" / "check_launch_activity_sources.py"
+ANALYZER = REPO / "scripts" / "analyze_launch_ab.py"
+BASELINE = REPO / "scripts" / "baselines" / "launch-structure-xcode-26.6-arm64.json"
+PROJECT = REPO / "project.yml"
 BRIEF = REPO / "docs" / "BRIEF.md"
 GOVERNANCE = REPO / "docs" / "GOVERNANCE.md"
 
 
 class G12ContractTests(unittest.TestCase):
-    def test_launch_test_records_exactly_five_official_samples(self) -> None:
-        source = LAUNCH_TEST.read_text(encoding="utf-8")
+    def test_stood_down_observer_retains_five_official_samples_without_verdict(self) -> None:
+        test_source = LAUNCH_TEST.read_text(encoding="utf-8")
+        observer = OBSERVER.read_text(encoding="utf-8")
+        workflow = WORKFLOW.read_text(encoding="utf-8")
 
-        self.assertEqual(source.count("func testLaunchMetricBaselineRecorded()"), 1)
-        self.assertIn("options.iterationCount = 5", source)
-        self.assertIn("XCTApplicationLaunchMetric()", source)
-        self.assertNotIn("ContinuousClock", source)
-        self.assertNotIn("testColdLaunchWithinBudget", source)
+        self.assertEqual(test_source.count("func testLaunchMetricBaselineRecorded()"), 1)
+        self.assertIn("options.iterationCount = 5", test_source)
+        self.assertIn("XCTApplicationLaunchMetric()", test_source)
+        self.assertIn("stood down", test_source)
+        self.assertNotIn("ContinuousClock", test_source)
 
-    def test_each_launch_sample_is_cold_and_reaches_the_root(self) -> None:
+        self.assertIn("EXPECTED_MEASUREMENT_COUNT = 5", observer)
+        self.assertIn('"samples_seconds"', observer)
+        self.assertIn('"status": "stood_down"', observer)
+        self.assertIn("G12 COLD-LAUNCH STOOD DOWN:", observer)
+        self.assertNotIn("LAUNCH_BUDGET_SECONDS", observer)
+        self.assertNotIn("G12 COLD-LAUNCH PASS", observer)
+        self.assertNotIn("G12 COLD-LAUNCH FAIL", observer)
+
+        start = workflow.index("Preserve G12 launch observations — STOOD DOWN, no verdict")
+        end = workflow.index("Collect deterministic launch-structure replacement evidence", start)
+        section = workflow[start:end]
+        self.assertEqual(section.count("xcresulttool get test-results metrics"), 2)
+        self.assertEqual(section.count("--schema-version 0.1.0"), 2)
+        self.assertIn("--evidence-json .gauntlet/g12-launch-observation.json", section)
+        self.assertIn("G12 COLD-LAUNCH STOOD DOWN: ", section)
+        self.assertIn("G12 COLD-LAUNCH BLOCKED: ", section)
+        self.assertNotIn("G12 COLD-LAUNCH PASS", section)
+        self.assertNotIn("G12 COLD-LAUNCH FAIL", section)
+        self.assertIn("Upload sanitized G12 per-iteration observation", workflow)
+
+    def test_each_observer_sample_launches_from_not_running_and_reaches_root(self) -> None:
         source = LAUNCH_TEST.read_text(encoding="utf-8")
         measured = source.split(
             "measure(metrics: [XCTApplicationLaunchMetric()], options: options) {",
@@ -29,187 +58,123 @@ class G12ContractTests(unittest.TestCase):
         )[1].split("\n        }", maxsplit=1)[0]
 
         self.assertEqual(source.count("self.terminateAndAssertNotRunning(app)"), 2)
-        self.assertEqual(measured.count("XCTAssertEqual(app.state, .notRunning"), 1)
-        self.assertEqual(measured.count("app.launch()"), 1)
-        self.assertEqual(
-            measured.count("rootElement.waitForExistence(timeout: 10)"), 1
-        )
-        self.assertEqual(measured.count("self.terminateAndAssertNotRunning(app)"), 1)
-        self.assertLess(
-            measured.index("XCTAssertEqual(app.state, .notRunning"),
-            measured.index("app.launch()"),
-        )
-        self.assertLess(
-            measured.index("app.launch()"),
-            measured.index("rootElement.waitForExistence(timeout: 10)"),
-        )
-        self.assertLess(
-            measured.index("rootElement.waitForExistence(timeout: 10)"),
-            measured.index("self.terminateAndAssertNotRunning(app)"),
-        )
-        helper = source.split(
-            "private func terminateAndAssertNotRunning", maxsplit=1
-        )[1]
-        self.assertIn("app.terminate()", helper)
-        self.assertIn("app.wait(for: .notRunning, timeout: 10)", helper)
-
-    def test_xcresult_expectation_tracks_the_single_metric_test(self) -> None:
-        workflow = WORKFLOW.read_text(encoding="utf-8")
-
-        self.assertIn(
-            "--expect 'TalariaUITests/LaunchPerformanceUITests/"
-            "testLaunchMetricBaselineRecorded()'",
-            workflow,
-        )
-        self.assertIn(
-            "--expect-count 'TalariaUITests/LaunchPerformanceUITests=1'",
-            workflow,
-        )
-        self.assertNotIn("testColdLaunchWithinBudget", workflow)
-
-    def test_workflow_checks_exact_pinned_structured_metric(self) -> None:
-        workflow = WORKFLOW.read_text(encoding="utf-8")
-        g12 = workflow.index("Verify G12 cold-launch budget")
-        g11 = workflow.index(
-            "G11 — N/A (no real streaming chat surface to capture)", g12
-        )
-        section = workflow[g12:g11]
-
-        self.assertLess(g12, g11)
-        self.assertEqual(section.count("xcresulttool get test-results metrics"), 2)
-        self.assertEqual(section.count("--schema-version 0.1.0"), 2)
-        self.assertIn("--path .gauntlet/ui.xcresult", section)
-        self.assertIn(
-            "G12_TEST_ID='test://com.apple.xcode/Talaria/TalariaUITests/"
-            "LaunchPerformanceUITests/testLaunchMetricBaselineRecorded'",
-            section,
-        )
-        self.assertIn('--test-id "$G12_TEST_ID"', section)
-        self.assertIn("g12_blocked", section)
-        self.assertIn("test -s .gauntlet/g12-metrics-schema.json", section)
-        self.assertIn("test ! -s .gauntlet/g12-metrics-schema.stderr", section)
-        self.assertIn("shasum -a 256 .gauntlet/g12-metrics-schema.json", section)
-        self.assertIn(
-            "55401dc6d98f6f89f82e05c971c3a29b8511a698d962af5a04c684c6fe46d8bf",
-            section,
-        )
-        self.assertIn("test -s .gauntlet/g12-metrics.json", section)
-        self.assertIn("test ! -s .gauntlet/g12-metrics.stderr", section)
-        self.assertIn("python3 -B scripts/check_launch_metrics.py", section)
-        self.assertIn("--schema-json .gauntlet/g12-metrics-schema.json", section)
-        self.assertIn("--metrics-json .gauntlet/g12-metrics.json", section)
-        self.assertNotIn("G12 BLOCKED", section)
-        for marker in (
-            "G12 COLD-LAUNCH PASS: ",
-            "G12 COLD-LAUNCH FAIL: ",
-            "G12 COLD-LAUNCH BLOCKED: ",
+        for statement in (
+            "XCTAssertEqual(app.state, .notRunning",
+            "app.launch()",
+            "rootElement.waitForExistence(timeout: 10)",
+            "self.terminateAndAssertNotRunning(app)",
         ):
-            self.assertIn(marker, section)
-        self.assertGreaterEqual(section.count("exit 2"), 2)
-        self.assertNotIn("placeholder", section.lower())
-        self.assertNotIn("tee .gauntlet/g12-metrics.json", section)
-        self.assertNotIn("tee .gauntlet/g12-metrics-schema.json", section)
+            self.assertEqual(measured.count(statement), 1)
+        self.assertLess(measured.index("app.launch()"), measured.index("rootElement.waitForExistence"))
 
-    def test_tier_b_self_tests_the_launch_metrics_checker(self) -> None:
+    def test_deterministic_replacement_is_enforced_without_wall_clock_verdict(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
+        checker = STRUCTURE.read_text(encoding="utf-8")
 
-        self.assertIn("scripts.test_check_launch_metrics", workflow)
+        self.assertIn("SIMCTL_CHILD_DYLD_PRINT_STATISTICS=1", workflow)
+        self.assertIn("for index in 01 02 03 04 05 06 07 08 09 10", workflow)
+        self.assertIn("check_launch_structure.py collect", workflow)
+        self.assertIn("check_launch_structure.py check", workflow)
+        self.assertIn("launch-structure-xcode-26.6-arm64.json", workflow)
+        self.assertTrue(BASELINE.is_file())
 
-    def test_streaming_clause_records_orchestrator_n_a_without_claiming_pass(
-        self,
-    ) -> None:
+        self.assertIn("EXPECTED_SAMPLE_COUNT = 10", checker)
+        self.assertIn('EXPECTED_APP_EXECUTABLE = "Talaria"', checker)
+        self.assertIn('EXPECTED_DEBUG_DYLIB = "Talaria.debug.dylib"', checker)
+        self.assertIn("__mod_init_func", checker)
+        self.assertIn("LC_*DYLIB closure changed", checker)
+        self.assertIn("byte_ceiling", checker)
+        self.assertIn("rebase_binding_ms", checker)
+        self.assertIn("initializer_ms", checker)
+        self.assertNotIn("XCTApplicationLaunchMetric", checker)
+
+    def test_first_frame_contract_covers_talaria_owned_launch_resources(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
-        ios = workflow[
-            workflow.index("  ios:") : workflow.index("  watchos:")
-        ]
-        g4 = workflow.index("Verify formatter parity and lint (G4, authoritative)")
-        step_header = (
-            "      - name: G12 streaming responsiveness — N/A "
-            "(no live stream or streaming UI to measure)"
-        )
-        reporter_header = "      - name: Emit Tier B job status"
+        audit_test = LAUNCH_AUDIT_TEST.read_text(encoding="utf-8")
+        source_checker = SOURCE_AUDIT.read_text(encoding="utf-8")
+
+        self.assertIn("check_launch_activity_sources.py", workflow)
+        self.assertIn("LaunchActivityAuditUITests/testFirstDrawHasNoTalariaOwnedLaunchActivity()", workflow)
+        self.assertIn('app.launchEnvironment["TALARIA_LAUNCH_AUDIT"] = "1"', audit_test)
+        self.assertIn('value == %@', audit_test)
+        for construction in (
+            "URLSession constructor",
+            "URLSession.shared",
+            "WebSocketHermesTransport constructor",
+            "NWPathMonitor constructor",
+            "SCNetworkReachabilityCreateWithName",
+            "Timer constructor",
+            "Timer.scheduledTimer",
+            "DispatchSource timer constructor",
+        ):
+            self.assertIn(construction, source_checker)
+        self.assertIn("bypasses AuditedLaunchResourceFactory", source_checker)
+
+    def test_transport_link_study_is_paired_interleaved_and_verdict_free(self) -> None:
+        analyzer = ANALYZER.read_text(encoding="utf-8")
+        launch_test = LINK_AB_TEST.read_text(encoding="utf-8")
+        project = PROJECT.read_text(encoding="utf-8")
+
+        self.assertIn("PAIR_COUNT = 10", analyzer)
+        self.assertIn('["control", "linked"] if index % 2 == 1', analyzer)
+        self.assertIn("linked_seconds_minus_control_seconds", analyzer)
+        self.assertIn('"control_seconds"', analyzer)
+        self.assertIn('"linked_seconds"', analyzer)
+        self.assertIn("median_delta_seconds", analyzer)
+        self.assertIn("mad_delta_seconds", analyzer)
+        self.assertIn("one device", analyzer)
+        self.assertNotIn("G12 LINK A/B PASS", analyzer)
+        self.assertNotIn("G12 LINK A/B FAIL", analyzer)
+        self.assertIn("options.iterationCount = 1", launch_test)
+        self.assertIn("It has no threshold", launch_test)
+        self.assertIn("Talaria-LinkAB:", project)
+        self.assertIn("TALARIA_LINK_TRANSPORT", project)
+        self.assertIn("Talaria-LinkMap-$(CURRENT_ARCH).txt", project)
+
+    def test_rearm_contract_is_complete_and_blocks_p2_closure(self) -> None:
+        for path in (BRIEF, GOVERNANCE):
+            source = " ".join(path.read_text(encoding="utf-8").split())
+            self.assertIn("stood down", source.lower())
+            self.assertTrue(
+                "never PASS or N/A" in source or "neither PASS nor N/A" in source
+            )
+            self.assertIn("detection floor", source.lower())
+            self.assertIn("confidence", source.lower())
+            self.assertIn("pinned known-good reference binary", source)
+            self.assertIn("interleaved", source)
+            self.assertIn("median delta or ratio", source)
+            self.assertIn("at least ten", source.lower())
+            self.assertIn("false-fail budget", source.lower())
+            self.assertIn("1%", source)
+            self.assertIn("30 runner instances", source)
+            self.assertIn("seven days", source)
+            self.assertIn("MAD", source)
+            self.assertIn("P95", source)
+            self.assertTrue(
+                "P2 cannot close" in source or "P2 also cannot close" in source
+            )
+
+    def test_governance_freezes_subject_and_governs_red_rulings_and_warmup(self) -> None:
+        source = " ".join(GOVERNANCE.read_text(encoding="utf-8").split())
+
+        self.assertIn("subject is frozen", source)
+        self.assertIn("N/A requires demonstrated absence", source)
+        self.assertIn("independent review", source)
+        self.assertIn("uniform warmup applied to every run", source)
+        self.assertIn("outcome-dependent intervention", source)
+        self.assertIn("best-of-two sample discarding", source)
+        self.assertIn("discards a warm-up iteration", source)
+
+    def test_streaming_clause_remains_named_n_a_until_real_surface(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        ios = workflow[workflow.index("  ios:") : workflow.index("  watchos:")]
         self.assertEqual(ios.count("      - name: G12 streaming responsiveness"), 1)
-        not_applicable = workflow.index(step_header)
-        reporter = workflow.index(reporter_header, not_applicable)
-        section = workflow[not_applicable:reporter]
-        expected_section = (
-            f"{step_header}\n"
-            "        run: |\n"
-            '          status="G12 streaming responsiveness — N/A '
-            "(no live stream or streaming UI to measure); arms at the first real "
-            'streaming chat surface (currently P3) with G11 and G14"\n'
-            "          printf '%s\\n' \"$status\" | tee "
-            ".gauntlet/g12-streaming-status.txt\n"
-            "          printf '### %s\\n' \"$status\" >> "
-            '"$GITHUB_STEP_SUMMARY"\n'
-            "\n"
-        )
-
-        self.assertGreater(not_applicable, g4)
-        self.assertEqual(section, expected_section)
+        start = ios.index("      - name: G12 streaming responsiveness")
+        end = ios.index("      - name: Emit Tier B job status", start)
+        section = ios[start:end]
+        self.assertIn("N/A (no live stream or streaming UI to measure)", section)
         self.assertNotIn("PASS", section)
         self.assertNotIn("BLOCKED", section)
-        self.assertNotIn("exit ", section)
-        self.assertNotIn("synthetic", ios.lower())
-        self.assertNotIn("benchmark", ios.lower())
-
-        watchos = workflow.index("  watchos:", reporter)
-        self.assertEqual(workflow[reporter:watchos].count("      - name:"), 1)
-
-    def test_phase_contract_rearms_dormant_gates_and_rebuilds_g11(self) -> None:
-        brief = BRIEF.read_text(encoding="utf-8")
-        governance = GOVERNANCE.read_text(encoding="utf-8")
-        workflow = WORKFLOW.read_text(encoding="utf-8")
-
-        for source in (brief, governance):
-            normalized = " ".join(source.split())
-            self.assertIn("G12 streaming", source)
-            self.assertIn("G11", source)
-            self.assertIn("G14", source)
-            self.assertIn(
-                "arms at the first real streaming chat surface (currently P3)",
-                normalized,
-            )
-            self.assertIn("ScreenshotMatrixUITests.swift", source)
-            self.assertIn("rebuild", source.lower())
-            self.assertIn(
-                "phase containing that surface cannot close until all three",
-                normalized.lower(),
-            )
-            self.assertIn(
-                "N/A (no real streaming chat surface to capture)", source
-            )
-            self.assertIn(
-                "N/A (no G11 images to review before that arm point)", source
-            )
-            self.assertIn(
-                "N/A (no live stream or streaming UI to measure)", source
-            )
-
-        for source in (brief, governance, workflow):
-            self.assertNotIn("no streaming surface until P2", source)
-            self.assertNotIn("first real streaming chat surface in P2", source)
-            self.assertNotIn("P2 is not complete until all three", source)
-
-        self.assertIn(
-            "enumerate every N/A gate by name and reason",
-            " ".join(governance.split()),
-        )
-        self.assertIn(
-            "G11 — N/A (no real streaming chat surface to capture", workflow
-        )
-        self.assertIn(
-            "arms at the first real streaming chat surface (currently P3)",
-            workflow,
-        )
-        self.assertIn("ScreenshotMatrixUITests.swift must be rebuilt", workflow)
-
-    def test_checker_pins_schema_version_and_strict_budget(self) -> None:
-        source = CHECKER.read_text(encoding="utf-8")
-
-        self.assertIn('EXPECTED_SCHEMA_VERSION = "0.1.0"', source)
-        self.assertIn('LAUNCH_BUDGET_SECONDS = Decimal("3")', source)
-        self.assertIn("self.mean_seconds < LAUNCH_BUDGET_SECONDS", source)
 
     def test_phase_zero_footnote_uses_primary_contrast(self) -> None:
         source = CONTENT_VIEW.read_text(encoding="utf-8")
