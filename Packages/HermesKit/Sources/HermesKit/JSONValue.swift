@@ -1,9 +1,9 @@
+import Foundation
+
 // JSON value model for the Hermes wire protocol.
 //
 // Numbers decode to integers where possible so canonical re-encoding stays
 // byte-stable against recorded golden frames (`5` never becomes `5.0`).
-
-import Foundation
 
 public indirect enum JSONValue: Sendable, Equatable {
     case null
@@ -45,31 +45,33 @@ extension JSONValue: Codable {
         switch self {
         case .null:
             try container.encodeNil()
-        case .bool(let value):
+        case let .bool(value):
             try container.encode(value)
-        case .int(let value):
+        case let .int(value):
             try container.encode(value)
-        case .double(let value):
+        case let .double(value):
             try container.encode(value)
-        case .string(let value):
+        case let .string(value):
             try container.encode(value)
-        case .array(let value):
+        case let .array(value):
             try container.encode(value)
-        case .object(let value):
+        case let .object(value):
             try container.encode(value)
         }
     }
 }
 
-extension JSONValue {
+public extension JSONValue {
     /// Object member lookup; `.null` for anything that is not an object.
-    public subscript(key: String) -> JSONValue? {
-        guard case .object(let members) = self else { return nil }
+    subscript(key: String) -> JSONValue? {
+        guard case let .object(members) = self else { return nil }
         return members[key]
     }
 
-    public var isNull: Bool {
-        if case .null = self { return true }
+    var isNull: Bool {
+        if case .null = self {
+            return true
+        }
         return false
     }
 }

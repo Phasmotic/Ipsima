@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Phase-0 shell. Real surfaces (connection registry, sessions, streaming
-/// chat, approvals) arrive in P2 behind HermesKit.
+/// Phase-0 shell. Connection and first-run surfaces arrive in P2; sessions,
+/// streaming chat, and approvals arrive in P3 behind HermesKit.
 struct ContentView: View {
     var body: some View {
         VStack(spacing: 12) {
@@ -12,7 +12,7 @@ struct ContentView: View {
                 .font(.largeTitle.bold())
             Text("Hermes Agent client — scaffold")
                 .font(.footnote)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.primary)
         }
         .padding()
     }

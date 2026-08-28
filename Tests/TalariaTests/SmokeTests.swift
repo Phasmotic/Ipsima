@@ -1,5 +1,5 @@
-import XCTest
 @testable import Talaria
+import XCTest
 
 final class SmokeTests: XCTestCase {
     /// Placeholder proving the iOS unit-test target runs end-to-end.

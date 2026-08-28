@@ -1,20 +1,1773 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Hermes tui_gateway protocol catalog",
+  "title": "Hermes tui_gateway + api_server protocol catalog",
+  "source": {
+    "repository": "https://github.com/NousResearch/hermes-agent.git",
+    "commit": "e3b5512b7b3f6cbcb23ba5fffdc66d5015eca246",
+    "inputs": [
+      {
+        "path": "gateway/platforms/api_server.py",
+        "sha256": "8d87036dd488cb811dbabb7048102d0c28fbf54e0e658c464683000118537ec3"
+      },
+      {
+        "path": "hermes_cli/dashboard_auth/ws_tickets.py",
+        "sha256": "b66e29a067002ad8a345b49281d30c75d6ec2bb177d58214611db66925bb4429"
+      },
+      {
+        "path": "hermes_cli/web_server.py",
+        "sha256": "6e1b799f7fe4e70cf1b89b58c0ac94712ae2065ed3c1b10a4d1e56f0a5a6f174"
+      },
+      {
+        "path": "tui_gateway/__init__.py",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "tui_gateway/_stdin_recovery.py",
+        "sha256": "da9f53dced966e585d88a3fd7fe4fcbf62f87b13b64ae4ca4905399cbfe4f539"
+      },
+      {
+        "path": "tui_gateway/compute_host.py",
+        "sha256": "43b4d8fc35ed03b783347956ba781d1ffe71fb9e11d1365a6c12f2c328793b63"
+      },
+      {
+        "path": "tui_gateway/entry.py",
+        "sha256": "67730336c0f28cdaf984e89cf71a85f6434eace2cbc52e4c07e5d49dc4a66d5d"
+      },
+      {
+        "path": "tui_gateway/event_publisher.py",
+        "sha256": "e79ea875f168e1cdb70e2d174875c3c6789f93ddca06350bd90b42c33f6b06d0"
+      },
+      {
+        "path": "tui_gateway/event_replay.py",
+        "sha256": "a4bb6223db7b4e26f8ad851c58d29120d90a2f7b18cb15abb774e47c4004490f"
+      },
+      {
+        "path": "tui_gateway/git_probe.py",
+        "sha256": "d3d3b5db5bd56a2f44ce0ceafcd01216ed13af259bbd408cc25379e605184f07"
+      },
+      {
+        "path": "tui_gateway/host_supervisor.py",
+        "sha256": "a2b1a45cea41080bf3c8c3ad48880815d4e1637c9c16d1d1c364011cb8142690"
+      },
+      {
+        "path": "tui_gateway/loop_noise.py",
+        "sha256": "501f6b1dd8602cf663eaa302478bea1646f2dacddea94b6dfd3dd43518128529"
+      },
+      {
+        "path": "tui_gateway/mcp_oauth_sessions.py",
+        "sha256": "179f8c89a4f2eb22410c42e31f18b152f1c418dbb6ccab9adef7bb26c4195320"
+      },
+      {
+        "path": "tui_gateway/mcp_rpc_helpers.py",
+        "sha256": "3610d0db6e2a22b80758cc995c703fbfc075412406ce2af2f23d5b70e072d627"
+      },
+      {
+        "path": "tui_gateway/method_ctx.py",
+        "sha256": "0c1742502dbfab759efa6ccdb4456f5442f06b1701d56ef7037041ba783e99a7"
+      },
+      {
+        "path": "tui_gateway/methods_bot_relay.py",
+        "sha256": "5efc1ac67eda5db118453327de2809bb1cfdb8cb0259273b60e5d23983d37eec"
+      },
+      {
+        "path": "tui_gateway/methods_browser_control.py",
+        "sha256": "aedb56267cadbd1b4b69baefbf58bf0cf7d87e59daacf04bc2625184fd6ac72d"
+      },
+      {
+        "path": "tui_gateway/methods_complete.py",
+        "sha256": "bc8f6e598589222b9fcb542ba85faeb71be926886d80fcf0b15a2511d3a4b58d"
+      },
+      {
+        "path": "tui_gateway/methods_config.py",
+        "sha256": "2ffe5fae39e8962a086d4eea7ec26c3f1d29f2bb8a97422d5606eecaa2b3f116"
+      },
+      {
+        "path": "tui_gateway/methods_images.py",
+        "sha256": "42579ba374c5312f4fa2bf5240770c60143aff8bd123ea4403f6b3dba71124a9"
+      },
+      {
+        "path": "tui_gateway/methods_profiles.py",
+        "sha256": "d4f203ba5d645702b06300cbc28f63d1d79d1394e71564d078ad123040942bb5"
+      },
+      {
+        "path": "tui_gateway/methods_prompt.py",
+        "sha256": "658c55f43608713d1de26b735a4f288ee27421f8b6a3ae7d1a8e30d6f4c967d8"
+      },
+      {
+        "path": "tui_gateway/methods_session.py",
+        "sha256": "f23f1d300343d301df67a6c7468b7f0a7dd9b427cc4a4c6fbc5cdd1fd4f49c02"
+      },
+      {
+        "path": "tui_gateway/methods_tools.py",
+        "sha256": "b86e8be84a75eaec5b7fd4b29cc1e576810c10190005bbda1688182cb2bff650"
+      },
+      {
+        "path": "tui_gateway/project_tree.py",
+        "sha256": "f9212012acfe49ded4333357ff5e10fdec665d2cec5875e59a4c75c0b018039d"
+      },
+      {
+        "path": "tui_gateway/render.py",
+        "sha256": "98debf41704110249127095105993e8fd5b1fc1647f83d9c18202cd99d70148d"
+      },
+      {
+        "path": "tui_gateway/server.py",
+        "sha256": "798f34c6ad7531d462e2f32af71ba959470bcaba7c0020d5b8bc3b96878fdd1f"
+      },
+      {
+        "path": "tui_gateway/slash_fuzzy.py",
+        "sha256": "8d79f654da8e2eae6ac790266a669f76954a5816dd9e236f5991d8fe8000678c"
+      },
+      {
+        "path": "tui_gateway/slash_worker.py",
+        "sha256": "d44b371b77106bd29c9d93e1e83218d950961f27108c377f686bd93bdf640d4a"
+      },
+      {
+        "path": "tui_gateway/synthetic_turn.py",
+        "sha256": "39c809d9956293ac9eef1cc30fa7de8b36cdc046d4407e6aacd368b93fddf8e9"
+      },
+      {
+        "path": "tui_gateway/transport.py",
+        "sha256": "75be87f545aeaffce9c2c72854fecc74e564de00df2c1cfb739ac4befaf30c8d"
+      },
+      {
+        "path": "tui_gateway/turn_marker.py",
+        "sha256": "25061212a2212af876a0db476cfe9d45369d92303f905c67dc0af3f6545b992c"
+      },
+      {
+        "path": "tui_gateway/ws.py",
+        "sha256": "efceb7cba3d206dd9ba938ec6553106352d53e43895b7beb0b3d8ae93aade1f3"
+      }
+    ]
+  },
   "derived_from": [
-    "~/.hermes/hermes-agent/tui_gateway/server.py",
-    "~/.hermes/hermes-agent/tui_gateway/ws.py",
-    "~/.hermes/hermes-agent/gateway/platforms/api_server.py",
-    "~/.hermes/hermes-agent/hermes_cli/web_server.py"
+    "tui_gateway/*.py",
+    "gateway/platforms/api_server.py",
+    "hermes_cli/dashboard_auth/ws_tickets.py",
+    "hermes_cli/web_server.py"
   ],
   "derived_at": "2026-08-26",
-  "note": "Source wins over docs. Regenerate via scripts/derive_protocol.py; deltas listed in docs/PROTOCOL.md.",
+  "source_note": "Derived exclusively from pinned Git objects; mutable checkout content is ignored. Source wins over docs.",
   "framing": {
-    "transport": "websocket",
+    "transport": "websocket (primary) / REST+SSE (fallback)",
     "path": "/api/ws",
-    "encoding": "newline-delimited JSON-RPC 2.0, both directions",
-    "canonical_form": "sorted keys, no insignificant whitespace; fixtures stored canonically"
+    "encoding": "one JSON-RPC 2.0 object per WebSocket text message, both directions; stdio is newline-delimited",
+    "event_wrapping": {
+      "shape": {
+        "jsonrpc": "2.0",
+        "method": "event",
+        "params": {
+          "type": "<event-name>",
+          "payload": {}
+        }
+      },
+      "note": "Server-pushed events ride as notifications named 'event'; the app-level name is params.type."
+    },
+    "canonical_form": "sorted keys, no insignificant whitespace; fixtures stored canonically",
+    "heartbeat": {
+      "client_method": "gateway.ping",
+      "result": {
+        "ok": true
+      },
+      "note": "Handled inline before normal dispatch; keep interval modest."
+    },
+    "parse_error_reply": {
+      "code": -32700,
+      "id": null
+    },
+    "token_coalescing": "*.delta stream frames may be batched server-side (~30 fps flush); do not rely on per-token timing."
   },
-  "requests": [],
-  "events": []
+  "auth": {
+    "websocket_gated": "?ticket=<single-use 30s ticket> minted via dashboard auth; legacy ?token= rejected",
+    "websocket_loopback_or_insecure": "?token=<dashboard session token>",
+    "websocket_internal": "?internal=<process credential> — server-spawned children only, never clients",
+    "dashboard_http_header": "X-Hermes-Session-Token (legacy Authorization: Bearer accepted)",
+    "api_server": "Authorization: Bearer <API_SERVER_KEY>, required even on loopback"
+  },
+  "requests": [
+    {
+      "name": "agents.list",
+      "defined_at": [
+        "methods_tools.py:1664"
+      ]
+    },
+    {
+      "name": "approval.pending",
+      "defined_at": [
+        "methods_prompt.py:1588"
+      ]
+    },
+    {
+      "name": "approval.received",
+      "defined_at": [
+        "methods_prompt.py:1601"
+      ]
+    },
+    {
+      "name": "approval.respond",
+      "defined_at": [
+        "methods_prompt.py:1665"
+      ]
+    },
+    {
+      "name": "billing.auto_reload",
+      "defined_at": [
+        "methods_session.py:2637"
+      ]
+    },
+    {
+      "name": "billing.charge",
+      "defined_at": [
+        "methods_session.py:2582"
+      ]
+    },
+    {
+      "name": "billing.charge_status",
+      "defined_at": [
+        "methods_session.py:2608"
+      ]
+    },
+    {
+      "name": "billing.state",
+      "defined_at": [
+        "methods_session.py:2431"
+      ]
+    },
+    {
+      "name": "billing.step_up",
+      "defined_at": [
+        "methods_session.py:2659"
+      ]
+    },
+    {
+      "name": "bot_relay.deliver",
+      "defined_at": [
+        "methods_bot_relay.py:75"
+      ]
+    },
+    {
+      "name": "bot_relay.outbox.drain",
+      "defined_at": [
+        "methods_bot_relay.py:55"
+      ]
+    },
+    {
+      "name": "bot_relay.reply",
+      "defined_at": [
+        "methods_bot_relay.py:181"
+      ]
+    },
+    {
+      "name": "bot_relay.roster.sync",
+      "defined_at": [
+        "methods_bot_relay.py:33"
+      ]
+    },
+    {
+      "name": "browser.controller.detach",
+      "defined_at": [
+        "methods_browser_control.py:346"
+      ]
+    },
+    {
+      "name": "browser.controller.heartbeat",
+      "defined_at": [
+        "methods_browser_control.py:311"
+      ]
+    },
+    {
+      "name": "browser.controller.register",
+      "defined_at": [
+        "methods_browser_control.py:128"
+      ]
+    },
+    {
+      "name": "browser.controller.result",
+      "defined_at": [
+        "methods_browser_control.py:242"
+      ]
+    },
+    {
+      "name": "browser.manage",
+      "defined_at": [
+        "methods_tools.py:1411"
+      ]
+    },
+    {
+      "name": "clarify.respond",
+      "defined_at": [
+        "methods_prompt.py:1515"
+      ]
+    },
+    {
+      "name": "cli.exec",
+      "defined_at": [
+        "methods_tools.py:371"
+      ]
+    },
+    {
+      "name": "clipboard.paste",
+      "defined_at": [
+        "methods_prompt.py:937"
+      ]
+    },
+    {
+      "name": "command.dispatch",
+      "defined_at": [
+        "methods_tools.py:432"
+      ]
+    },
+    {
+      "name": "command.resolve",
+      "defined_at": [
+        "methods_tools.py:412"
+      ]
+    },
+    {
+      "name": "commands.catalog",
+      "defined_at": [
+        "methods_tools.py:255"
+      ]
+    },
+    {
+      "name": "complete.path",
+      "defined_at": [
+        "methods_complete.py:41"
+      ]
+    },
+    {
+      "name": "complete.slash",
+      "defined_at": [
+        "methods_complete.py:330"
+      ]
+    },
+    {
+      "name": "config.get",
+      "defined_at": [
+        "methods_config.py:181"
+      ]
+    },
+    {
+      "name": "config.set",
+      "defined_at": [
+        "server.py:12653"
+      ]
+    },
+    {
+      "name": "config.show",
+      "defined_at": [
+        "methods_tools.py:1450"
+      ]
+    },
+    {
+      "name": "cron.manage",
+      "defined_at": [
+        "methods_tools.py:1688"
+      ]
+    },
+    {
+      "name": "delegation.pause",
+      "defined_at": [
+        "methods_session.py:3369"
+      ]
+    },
+    {
+      "name": "delegation.status",
+      "defined_at": [
+        "methods_session.py:3349"
+      ]
+    },
+    {
+      "name": "diagnostics.share_nous",
+      "defined_at": [
+        "methods_config.py:464"
+      ]
+    },
+    {
+      "name": "file.attach",
+      "defined_at": [
+        "methods_prompt.py:1207"
+      ]
+    },
+    {
+      "name": "handoff.fail",
+      "defined_at": [
+        "methods_session.py:1657"
+      ]
+    },
+    {
+      "name": "handoff.request",
+      "defined_at": [
+        "methods_session.py:1542"
+      ]
+    },
+    {
+      "name": "handoff.state",
+      "defined_at": [
+        "methods_session.py:1630"
+      ]
+    },
+    {
+      "name": "image.attach",
+      "defined_at": [
+        "methods_prompt.py:977"
+      ]
+    },
+    {
+      "name": "image.attach_bytes",
+      "defined_at": [
+        "methods_prompt.py:1020"
+      ]
+    },
+    {
+      "name": "image.detach",
+      "defined_at": [
+        "methods_prompt.py:1254"
+      ]
+    },
+    {
+      "name": "image.generate",
+      "defined_at": [
+        "methods_images.py:22"
+      ]
+    },
+    {
+      "name": "input.detect_drop",
+      "defined_at": [
+        "methods_prompt.py:1274"
+      ]
+    },
+    {
+      "name": "insights.get",
+      "defined_at": [
+        "methods_tools.py:1275"
+      ]
+    },
+    {
+      "name": "learning.delete",
+      "defined_at": [
+        "methods_tools.py:1810"
+      ]
+    },
+    {
+      "name": "learning.detail",
+      "defined_at": [
+        "methods_tools.py:1799"
+      ]
+    },
+    {
+      "name": "learning.edit",
+      "defined_at": [
+        "methods_tools.py:1821"
+      ]
+    },
+    {
+      "name": "learning.frames",
+      "defined_at": [
+        "methods_tools.py:1775"
+      ]
+    },
+    {
+      "name": "llm.oneshot",
+      "defined_at": [
+        "methods_session.py:1483"
+      ]
+    },
+    {
+      "name": "mcp.catalog",
+      "defined_at": [
+        "methods_tools.py:1916"
+      ]
+    },
+    {
+      "name": "mcp.servers.add",
+      "defined_at": [
+        "methods_tools.py:2018"
+      ]
+    },
+    {
+      "name": "mcp.servers.list",
+      "defined_at": [
+        "methods_tools.py:1988"
+      ]
+    },
+    {
+      "name": "mcp.servers.oauth.poll",
+      "defined_at": [
+        "methods_tools.py:2337"
+      ]
+    },
+    {
+      "name": "mcp.servers.oauth.start",
+      "defined_at": [
+        "methods_tools.py:2276"
+      ]
+    },
+    {
+      "name": "mcp.servers.remove",
+      "defined_at": [
+        "methods_tools.py:2250"
+      ]
+    },
+    {
+      "name": "mcp.servers.set_api_key",
+      "defined_at": [
+        "methods_tools.py:2091"
+      ]
+    },
+    {
+      "name": "mcp.servers.test",
+      "defined_at": [
+        "methods_tools.py:2171"
+      ]
+    },
+    {
+      "name": "mcp.setup.respond",
+      "defined_at": [
+        "methods_prompt.py:1569"
+      ]
+    },
+    {
+      "name": "message.react",
+      "defined_at": [
+        "methods_session.py:1430"
+      ]
+    },
+    {
+      "name": "model.disconnect",
+      "defined_at": [
+        "methods_complete.py:572"
+      ]
+    },
+    {
+      "name": "model.options",
+      "defined_at": [
+        "methods_complete.py:469"
+      ]
+    },
+    {
+      "name": "model.save_key",
+      "defined_at": [
+        "methods_complete.py:492"
+      ]
+    },
+    {
+      "name": "paste.collapse",
+      "defined_at": [
+        "methods_complete.py:14"
+      ]
+    },
+    {
+      "name": "pdf.attach",
+      "defined_at": [
+        "methods_prompt.py:1081"
+      ]
+    },
+    {
+      "name": "pet.cancel",
+      "defined_at": [
+        "methods_session.py:2174"
+      ]
+    },
+    {
+      "name": "pet.cells",
+      "defined_at": [
+        "methods_session.py:1794"
+      ]
+    },
+    {
+      "name": "pet.disable",
+      "defined_at": [
+        "methods_session.py:2139"
+      ]
+    },
+    {
+      "name": "pet.export",
+      "defined_at": [
+        "methods_session.py:2039"
+      ]
+    },
+    {
+      "name": "pet.gallery",
+      "defined_at": [
+        "methods_session.py:1899"
+      ]
+    },
+    {
+      "name": "pet.generate",
+      "defined_at": [
+        "methods_session.py:2219"
+      ]
+    },
+    {
+      "name": "pet.generate.status",
+      "defined_at": [
+        "methods_session.py:2188"
+      ]
+    },
+    {
+      "name": "pet.hatch",
+      "defined_at": [
+        "methods_session.py:2332"
+      ]
+    },
+    {
+      "name": "pet.info",
+      "defined_at": [
+        "methods_session.py:1735"
+      ]
+    },
+    {
+      "name": "pet.info.meta",
+      "defined_at": [
+        "methods_session.py:1771"
+      ]
+    },
+    {
+      "name": "pet.remove",
+      "defined_at": [
+        "methods_session.py:2009"
+      ]
+    },
+    {
+      "name": "pet.rename",
+      "defined_at": [
+        "methods_session.py:2066"
+      ]
+    },
+    {
+      "name": "pet.scale",
+      "defined_at": [
+        "methods_session.py:2153"
+      ]
+    },
+    {
+      "name": "pet.select",
+      "defined_at": [
+        "methods_session.py:1982"
+      ]
+    },
+    {
+      "name": "pet.thumb",
+      "defined_at": [
+        "methods_session.py:2104"
+      ]
+    },
+    {
+      "name": "ping",
+      "defined_at": [
+        "server.py:15486"
+      ]
+    },
+    {
+      "name": "plugins.list",
+      "defined_at": [
+        "methods_tools.py:1428"
+      ]
+    },
+    {
+      "name": "plugins.manage",
+      "defined_at": [
+        "methods_tools.py:2395"
+      ]
+    },
+    {
+      "name": "preview.act.respond",
+      "defined_at": [
+        "methods_prompt.py:1541"
+      ]
+    },
+    {
+      "name": "preview.read.respond",
+      "defined_at": [
+        "methods_prompt.py:1533"
+      ]
+    },
+    {
+      "name": "preview.restart",
+      "defined_at": [
+        "methods_prompt.py:1383"
+      ]
+    },
+    {
+      "name": "process.kill",
+      "defined_at": [
+        "methods_tools.py:61"
+      ]
+    },
+    {
+      "name": "process.list",
+      "defined_at": [
+        "methods_tools.py:49"
+      ]
+    },
+    {
+      "name": "process.stop",
+      "defined_at": [
+        "methods_tools.py:39"
+      ]
+    },
+    {
+      "name": "profiles.configure",
+      "defined_at": [
+        "methods_profiles.py:705"
+      ]
+    },
+    {
+      "name": "profiles.create",
+      "defined_at": [
+        "methods_profiles.py:295"
+      ]
+    },
+    {
+      "name": "profiles.describe",
+      "defined_at": [
+        "methods_profiles.py:534"
+      ]
+    },
+    {
+      "name": "profiles.get_asset",
+      "defined_at": [
+        "methods_profiles.py:1037"
+      ]
+    },
+    {
+      "name": "profiles.list",
+      "defined_at": [
+        "methods_profiles.py:22"
+      ]
+    },
+    {
+      "name": "profiles.set_asset",
+      "defined_at": [
+        "methods_profiles.py:951"
+      ]
+    },
+    {
+      "name": "project.facts",
+      "defined_at": [
+        "methods_session.py:329"
+      ]
+    },
+    {
+      "name": "projects.discover_repos",
+      "defined_at": [
+        "methods_config.py:19"
+      ]
+    },
+    {
+      "name": "projects.project_sessions",
+      "defined_at": [
+        "methods_config.py:151"
+      ]
+    },
+    {
+      "name": "projects.record_repos",
+      "defined_at": [
+        "methods_config.py:52"
+      ]
+    },
+    {
+      "name": "projects.tree",
+      "defined_at": [
+        "methods_config.py:117"
+      ]
+    },
+    {
+      "name": "prompt.background",
+      "defined_at": [
+        "methods_prompt.py:1321"
+      ]
+    },
+    {
+      "name": "prompt.submit",
+      "defined_at": [
+        "methods_prompt.py:287"
+      ]
+    },
+    {
+      "name": "reload.env",
+      "defined_at": [
+        "methods_tools.py:234"
+      ]
+    },
+    {
+      "name": "reload.mcp",
+      "defined_at": [
+        "methods_tools.py:84"
+      ]
+    },
+    {
+      "name": "rollback.diff",
+      "defined_at": [
+        "methods_tools.py:1388"
+      ]
+    },
+    {
+      "name": "rollback.list",
+      "defined_at": [
+        "methods_tools.py:1300"
+      ]
+    },
+    {
+      "name": "rollback.restore",
+      "defined_at": [
+        "methods_tools.py:1330"
+      ]
+    },
+    {
+      "name": "secret.respond",
+      "defined_at": [
+        "methods_prompt.py:1583"
+      ]
+    },
+    {
+      "name": "session.activate",
+      "defined_at": [
+        "methods_session.py:1219"
+      ]
+    },
+    {
+      "name": "session.active_list",
+      "defined_at": [
+        "methods_session.py:1181"
+      ]
+    },
+    {
+      "name": "session.branch",
+      "defined_at": [
+        "methods_session.py:3111"
+      ]
+    },
+    {
+      "name": "session.close",
+      "defined_at": [
+        "methods_session.py:3099"
+      ]
+    },
+    {
+      "name": "session.compress",
+      "defined_at": [
+        "methods_session.py:2855"
+      ]
+    },
+    {
+      "name": "session.context_breakdown",
+      "defined_at": [
+        "methods_session.py:1705"
+      ]
+    },
+    {
+      "name": "session.create",
+      "defined_at": [
+        "methods_session.py:14"
+      ]
+    },
+    {
+      "name": "session.cwd.set",
+      "defined_at": [
+        "methods_session.py:1081"
+      ]
+    },
+    {
+      "name": "session.delete",
+      "defined_at": [
+        "methods_session.py:1244"
+      ]
+    },
+    {
+      "name": "session.events.since",
+      "defined_at": [
+        "methods_session.py:3640"
+      ]
+    },
+    {
+      "name": "session.events.stats",
+      "defined_at": [
+        "methods_session.py:3673"
+      ]
+    },
+    {
+      "name": "session.history",
+      "defined_at": [
+        "methods_session.py:2776"
+      ]
+    },
+    {
+      "name": "session.interrupt",
+      "defined_at": [
+        "methods_session.py:3327"
+      ]
+    },
+    {
+      "name": "session.list",
+      "defined_at": [
+        "methods_session.py:163"
+      ]
+    },
+    {
+      "name": "session.most_recent",
+      "defined_at": [
+        "methods_session.py:280"
+      ]
+    },
+    {
+      "name": "session.redirect",
+      "defined_at": [
+        "methods_session.py:3589"
+      ]
+    },
+    {
+      "name": "session.resume",
+      "defined_at": [
+        "methods_session.py:372"
+      ]
+    },
+    {
+      "name": "session.save",
+      "defined_at": [
+        "methods_session.py:3027"
+      ]
+    },
+    {
+      "name": "session.set_hidden",
+      "defined_at": [
+        "methods_session.py:1378"
+      ]
+    },
+    {
+      "name": "session.status",
+      "defined_at": [
+        "methods_session.py:2700"
+      ]
+    },
+    {
+      "name": "session.steer",
+      "defined_at": [
+        "methods_session.py:3552"
+      ]
+    },
+    {
+      "name": "session.title",
+      "defined_at": [
+        "methods_session.py:1294"
+      ]
+    },
+    {
+      "name": "session.undo",
+      "defined_at": [
+        "methods_session.py:2808"
+      ]
+    },
+    {
+      "name": "session.usage",
+      "defined_at": [
+        "methods_session.py:1681"
+      ]
+    },
+    {
+      "name": "session.workspace.move",
+      "defined_at": [
+        "methods_session.py:1106"
+      ]
+    },
+    {
+      "name": "setup.runtime_check",
+      "defined_at": [
+        "methods_config.py:389"
+      ]
+    },
+    {
+      "name": "setup.status",
+      "defined_at": [
+        "methods_config.py:379"
+      ]
+    },
+    {
+      "name": "shell.exec",
+      "defined_at": [
+        "methods_tools.py:2529"
+      ]
+    },
+    {
+      "name": "skills.manage",
+      "defined_at": [
+        "methods_tools.py:1832"
+      ]
+    },
+    {
+      "name": "skills.reload",
+      "defined_at": [
+        "methods_tools.py:2370"
+      ]
+    },
+    {
+      "name": "slash.exec",
+      "defined_at": [
+        "methods_tools.py:1121"
+      ]
+    },
+    {
+      "name": "spawn_tree.list",
+      "defined_at": [
+        "methods_session.py:3477"
+      ]
+    },
+    {
+      "name": "spawn_tree.load",
+      "defined_at": [
+        "methods_session.py:3528"
+      ]
+    },
+    {
+      "name": "spawn_tree.save",
+      "defined_at": [
+        "methods_session.py:3434"
+      ]
+    },
+    {
+      "name": "subagent.interrupt",
+      "defined_at": [
+        "methods_session.py:3377"
+      ]
+    },
+    {
+      "name": "subagent.steer",
+      "defined_at": [
+        "methods_session.py:3388"
+      ]
+    },
+    {
+      "name": "subscription.change",
+      "defined_at": [
+        "methods_session.py:2503"
+      ]
+    },
+    {
+      "name": "subscription.preview",
+      "defined_at": [
+        "methods_session.py:2478"
+      ]
+    },
+    {
+      "name": "subscription.resume",
+      "defined_at": [
+        "methods_session.py:2526"
+      ]
+    },
+    {
+      "name": "subscription.state",
+      "defined_at": [
+        "methods_session.py:2462"
+      ]
+    },
+    {
+      "name": "subscription.upgrade",
+      "defined_at": [
+        "methods_session.py:2544"
+      ]
+    },
+    {
+      "name": "sudo.respond",
+      "defined_at": [
+        "methods_prompt.py:1578"
+      ]
+    },
+    {
+      "name": "system.battery",
+      "defined_at": [
+        "methods_tools.py:14"
+      ]
+    },
+    {
+      "name": "terminal.read.respond",
+      "defined_at": [
+        "methods_prompt.py:1524"
+      ]
+    },
+    {
+      "name": "terminal.resize",
+      "defined_at": [
+        "methods_session.py:3631"
+      ]
+    },
+    {
+      "name": "tools.configure",
+      "defined_at": [
+        "methods_tools.py:1565"
+      ]
+    },
+    {
+      "name": "tools.list",
+      "defined_at": [
+        "methods_tools.py:1491"
+      ]
+    },
+    {
+      "name": "tools.show",
+      "defined_at": [
+        "methods_tools.py:1522"
+      ]
+    },
+    {
+      "name": "toolsets.list",
+      "defined_at": [
+        "methods_tools.py:1634"
+      ]
+    },
+    {
+      "name": "tour.respond",
+      "defined_at": [
+        "methods_prompt.py:1559"
+      ]
+    },
+    {
+      "name": "usage.bars",
+      "defined_at": [
+        "methods_session.py:2447"
+      ]
+    },
+    {
+      "name": "verification.status",
+      "defined_at": [
+        "methods_session.py:347"
+      ]
+    },
+    {
+      "name": "voice.record",
+      "defined_at": [
+        "server.py:15930"
+      ]
+    },
+    {
+      "name": "voice.toggle",
+      "defined_at": [
+        "server.py:15816"
+      ]
+    },
+    {
+      "name": "voice.tts",
+      "defined_at": [
+        "server.py:16084"
+      ]
+    },
+    {
+      "name": "wake.feed",
+      "defined_at": [
+        "server.py:15777"
+      ]
+    },
+    {
+      "name": "wake.pause",
+      "defined_at": [
+        "server.py:15677"
+      ]
+    },
+    {
+      "name": "wake.resume",
+      "defined_at": [
+        "server.py:15695"
+      ]
+    },
+    {
+      "name": "wake.start",
+      "defined_at": [
+        "server.py:15501"
+      ]
+    },
+    {
+      "name": "wake.status",
+      "defined_at": [
+        "server.py:15707"
+      ]
+    },
+    {
+      "name": "wake.stop",
+      "defined_at": [
+        "server.py:15650"
+      ]
+    },
+    {
+      "name": "window.read.respond",
+      "defined_at": [
+        "methods_prompt.py:1550"
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "agent.terminal.output",
+      "emitted_at": [
+        "server.py:11099"
+      ]
+    },
+    {
+      "name": "approval.request",
+      "emitted_at": [
+        "server.py:2355"
+      ]
+    },
+    {
+      "name": "background.complete",
+      "emitted_at": [
+        "methods_prompt.py:1358",
+        "methods_prompt.py:1371"
+      ]
+    },
+    {
+      "name": "billing.step_up.verification",
+      "emitted_at": [
+        "methods_session.py:2679"
+      ]
+    },
+    {
+      "name": "browser.progress",
+      "emitted_at": [
+        "server.py:16236"
+      ]
+    },
+    {
+      "name": "clarify.expire",
+      "emitted_at": [
+        "server.py (derived: clarify.request timeout)"
+      ]
+    },
+    {
+      "name": "clarify.request",
+      "emitted_at": [
+        "server.py:4146",
+        "server.py:4158"
+      ]
+    },
+    {
+      "name": "error",
+      "emitted_at": [
+        "methods_prompt.py:901",
+        "server.py:11521",
+        "server.py:12147",
+        "server.py:2838",
+        "server.py:5804",
+        "server.py:5836",
+        "server.py:5842",
+        "server.py:8989",
+        "server.py:9392"
+      ]
+    },
+    {
+      "name": "gateway.ready",
+      "emitted_at": [
+        "entry.py:448",
+        "ws.py:373"
+      ]
+    },
+    {
+      "name": "mcp.setup.expire",
+      "emitted_at": [
+        "server.py (derived: mcp.setup.request timeout)"
+      ]
+    },
+    {
+      "name": "mcp.setup.request",
+      "emitted_at": [
+        "server.py:6989"
+      ]
+    },
+    {
+      "name": "message.complete",
+      "emitted_at": [
+        "server.py:11955",
+        "server.py:2215",
+        "server.py:6891",
+        "server.py:9128"
+      ]
+    },
+    {
+      "name": "message.delta",
+      "emitted_at": [
+        "server.py:11658",
+        "server.py:6868",
+        "server.py:6873"
+      ]
+    },
+    {
+      "name": "message.interim",
+      "emitted_at": [
+        "server.py:11667",
+        "server.py:7009"
+      ]
+    },
+    {
+      "name": "message.start",
+      "emitted_at": [
+        "server.py:10606",
+        "server.py:10615",
+        "server.py:10853",
+        "server.py:10939",
+        "server.py:11017",
+        "server.py:11412",
+        "server.py:12267",
+        "server.py:12313",
+        "server.py:6859",
+        "server.py:8646"
+      ]
+    },
+    {
+      "name": "moa.aggregating",
+      "emitted_at": [
+        "server.py:6703"
+      ]
+    },
+    {
+      "name": "moa.phase",
+      "emitted_at": [
+        "server.py:6740"
+      ]
+    },
+    {
+      "name": "moa.progress",
+      "emitted_at": [
+        "server.py:6713"
+      ]
+    },
+    {
+      "name": "moa.reference",
+      "emitted_at": [
+        "server.py:6700"
+      ]
+    },
+    {
+      "name": "notice",
+      "emitted_at": [
+        "server.py:5755"
+      ]
+    },
+    {
+      "name": "notification.clear",
+      "emitted_at": [
+        "server.py:2637",
+        "server.py:6935"
+      ]
+    },
+    {
+      "name": "notification.show",
+      "emitted_at": [
+        "server.py:2620",
+        "server.py:6923"
+      ]
+    },
+    {
+      "name": "pet.generate.progress",
+      "emitted_at": [
+        "methods_session.py:2281",
+        "methods_session.py:2297"
+      ]
+    },
+    {
+      "name": "pet.hatch.progress",
+      "emitted_at": [
+        "methods_session.py:2393"
+      ]
+    },
+    {
+      "name": "preview.act.expire",
+      "emitted_at": [
+        "server.py (derived: preview.act.request timeout)"
+      ]
+    },
+    {
+      "name": "preview.act.request",
+      "emitted_at": [
+        "server.py:6967"
+      ]
+    },
+    {
+      "name": "preview.read.expire",
+      "emitted_at": [
+        "server.py (derived: preview.read.request timeout)"
+      ]
+    },
+    {
+      "name": "preview.read.request",
+      "emitted_at": [
+        "server.py:6953"
+      ]
+    },
+    {
+      "name": "preview.restart.complete",
+      "emitted_at": [
+        "methods_prompt.py:1495",
+        "methods_prompt.py:1497"
+      ]
+    },
+    {
+      "name": "preview.restart.progress",
+      "emitted_at": [
+        "methods_prompt.py:1458",
+        "server.py:7401"
+      ]
+    },
+    {
+      "name": "reaction",
+      "emitted_at": [
+        "server.py:6911"
+      ]
+    },
+    {
+      "name": "reasoning.available",
+      "emitted_at": [
+        "server.py:6685"
+      ]
+    },
+    {
+      "name": "reasoning.delta",
+      "emitted_at": [
+        "server.py:6862",
+        "server.py:6912"
+      ]
+    },
+    {
+      "name": "review.summary",
+      "emitted_at": [
+        "server.py:2805",
+        "server.py:7896"
+      ]
+    },
+    {
+      "name": "secret.expire",
+      "emitted_at": [
+        "server.py (derived: secret.request timeout)"
+      ]
+    },
+    {
+      "name": "secret.request",
+      "emitted_at": [
+        "server.py:7085"
+      ]
+    },
+    {
+      "name": "session.info",
+      "emitted_at": [
+        "methods_prompt.py:889",
+        "methods_session.py:1102",
+        "methods_session.py:1176",
+        "methods_session.py:2980",
+        "methods_tools.py:1084",
+        "methods_tools.py:163",
+        "server.py:12830",
+        "server.py:12948",
+        "server.py:12996",
+        "server.py:13010",
+        "server.py:13128",
+        "server.py:14962",
+        "server.py:14984",
+        "server.py:2222",
+        "server.py:2830",
+        "server.py:3267",
+        "server.py:5665",
+        "server.py:6430",
+        "server.py:7068",
+        "server.py:7203",
+        "server.py:7467",
+        "server.py:7538",
+        "server.py:7912"
+      ]
+    },
+    {
+      "name": "session.resume_progress",
+      "emitted_at": [
+        "server.py:9349",
+        "server.py:9367",
+        "server.py:9387"
+      ]
+    },
+    {
+      "name": "session.title",
+      "emitted_at": [
+        "server.py:11703"
+      ]
+    },
+    {
+      "name": "session.usage",
+      "emitted_at": [
+        "server.py:11347"
+      ]
+    },
+    {
+      "name": "status.update",
+      "emitted_at": [
+        "server.py:10573",
+        "server.py:10596",
+        "server.py:10613",
+        "server.py:10838",
+        "server.py:10914",
+        "server.py:11000",
+        "server.py:11976",
+        "server.py:12022",
+        "server.py:12056",
+        "server.py:2371",
+        "server.py:8641"
+      ]
+    },
+    {
+      "name": "sudo.expire",
+      "emitted_at": [
+        "server.py (derived: sudo.request timeout)"
+      ]
+    },
+    {
+      "name": "sudo.request",
+      "emitted_at": [
+        "server.py:7078"
+      ]
+    },
+    {
+      "name": "terminal.close",
+      "emitted_at": [
+        "server.py:11109"
+      ]
+    },
+    {
+      "name": "terminal.read.expire",
+      "emitted_at": [
+        "server.py (derived: terminal.read.request timeout)"
+      ]
+    },
+    {
+      "name": "terminal.read.request",
+      "emitted_at": [
+        "server.py:6943"
+      ]
+    },
+    {
+      "name": "thinking.delta",
+      "emitted_at": [
+        "server.py:6908"
+      ]
+    },
+    {
+      "name": "tool.complete",
+      "emitted_at": [
+        "server.py:6650",
+        "server.py:6876",
+        "server.py:6889"
+      ]
+    },
+    {
+      "name": "tool.generating",
+      "emitted_at": [
+        "server.py:6907"
+      ]
+    },
+    {
+      "name": "tool.output_risk",
+      "emitted_at": [
+        "server.py:6679"
+      ]
+    },
+    {
+      "name": "tool.start",
+      "emitted_at": [
+        "server.py:6603",
+        "server.py:6886"
+      ]
+    },
+    {
+      "name": "tour.expire",
+      "emitted_at": [
+        "server.py (derived: tour.request timeout)"
+      ]
+    },
+    {
+      "name": "tour.request",
+      "emitted_at": [
+        "server.py:4223"
+      ]
+    },
+    {
+      "name": "wake.detected",
+      "emitted_at": [
+        "server.py:15605"
+      ]
+    },
+    {
+      "name": "window.read.expire",
+      "emitted_at": [
+        "server.py (derived: window.read.request timeout)"
+      ]
+    },
+    {
+      "name": "window.read.request",
+      "emitted_at": [
+        "server.py:6977"
+      ]
+    }
+  ],
+  "rest_routes": [
+    {
+      "method": "GET",
+      "path": "/health"
+    },
+    {
+      "method": "GET",
+      "path": "/health/detailed"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/health"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/models"
+    },
+    {
+      "method": "GET",
+      "path": "/api/model/options"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/capabilities"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/browser-control/register"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/browser-control/ws"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/artifacts/upload"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/artifacts/download/{artifact_id}"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/skills"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/toolsets"
+    },
+    {
+      "method": "GET",
+      "path": "/api/sessions"
+    },
+    {
+      "method": "POST",
+      "path": "/api/sessions"
+    },
+    {
+      "method": "GET",
+      "path": "/api/sessions/{session_id}"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/sessions/{session_id}"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/sessions/{session_id}"
+    },
+    {
+      "method": "GET",
+      "path": "/api/sessions/{session_id}/messages"
+    },
+    {
+      "method": "POST",
+      "path": "/api/sessions/{session_id}/fork"
+    },
+    {
+      "method": "POST",
+      "path": "/api/sessions/{session_id}/chat"
+    },
+    {
+      "method": "POST",
+      "path": "/api/sessions/{session_id}/chat/stream"
+    },
+    {
+      "method": "POST",
+      "path": "/api/sessions/{session_id}/model"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/chat/completions"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/responses"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/responses/{response_id}"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/responses/{response_id}"
+    },
+    {
+      "method": "POST",
+      "path": "/api/platforms/{platform}/events"
+    },
+    {
+      "method": "GET",
+      "path": "/api/jobs"
+    },
+    {
+      "method": "POST",
+      "path": "/api/jobs"
+    },
+    {
+      "method": "GET",
+      "path": "/api/jobs/{job_id}"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/jobs/{job_id}"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/jobs/{job_id}"
+    },
+    {
+      "method": "POST",
+      "path": "/api/jobs/{job_id}/pause"
+    },
+    {
+      "method": "POST",
+      "path": "/api/jobs/{job_id}/resume"
+    },
+    {
+      "method": "POST",
+      "path": "/api/jobs/{job_id}/run"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/runs"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/runs/{run_id}"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/runs/{run_id}/events"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/runs/{run_id}/approval"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/runs/{run_id}/steer"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/runs/{run_id}/stop"
+    },
+    {
+      "method": "POST",
+      "path": "/api/cron/fire"
+    }
+  ]
 }

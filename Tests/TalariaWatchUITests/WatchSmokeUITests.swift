@@ -2,6 +2,7 @@ import XCTest
 
 /// watchOS UI smoke — proves the watch app boots and renders its root view.
 final class WatchSmokeUITests: XCTestCase {
+    @MainActor
     func testWatchAppLaunchesAndShowsRoot() {
         let app = XCUIApplication()
         app.launch()

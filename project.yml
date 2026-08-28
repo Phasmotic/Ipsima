@@ -12,7 +12,10 @@ settings:
     SWIFT_VERSION: "6.0"
     ENABLE_USER_SCRIPT_SANDBOXING: YES
     CODE_SIGN_STYLE: Automatic
-    # Tier B builds are simulator/archive-only until P6 (hard-gated).
+    GENERATE_INFOPLIST_FILE: YES
+    CURRENT_PROJECT_VERSION: "1"
+    MARKETING_VERSION: "1.0"
+    # Tier B builds are simulator/archive-only until P7 (hard-gated).
     CODE_SIGNING_ALLOWED: NO
 
 packages:
@@ -27,10 +30,15 @@ targets:
       - App/Talaria
     dependencies:
       - package: HermesKit
+      # Xcode 26 always runs metadata extraction for Swift app bundles; P4 uses App Intents.
+      - sdk: AppIntents.framework
       - target: TalariaWidgets   # extension embedded in the app bundle
+      - target: TalariaWatch     # watch app embedded in the iOS app bundle
+        embed: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.schonfeld.talaria.app
+        TARGETED_DEVICE_FAMILY: "1"
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
         SWIFT_STRICT_CONCURRENCY: complete
@@ -38,13 +46,22 @@ targets:
   TalariaWidgets:
     type: app-extension
     platform: iOS
+    info:
+      path: .gauntlet/generated/TalariaWidgets-Info.plist
+      properties:
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
     sources:
       - App/TalariaWidgets
     dependencies:
       - package: HermesKit
     settings:
       base:
+        GENERATE_INFOPLIST_FILE: NO
         PRODUCT_BUNDLE_IDENTIFIER: dev.schonfeld.talaria.app.widgets
+        TARGETED_DEVICE_FAMILY: "1"
         SKIP_INSTALL: YES
         SWIFT_STRICT_CONCURRENCY: complete
 
@@ -55,23 +72,34 @@ targets:
       - App/TalariaWatch
     dependencies:
       - package: HermesKit
+      # Xcode 26 always runs metadata extraction for Swift app bundles; P4 uses App Intents.
+      - sdk: AppIntents.framework
       - target: TalariaWatchWidgets   # extension embedded in the watch app
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: dev.schonfeld.talaria.watchkitapp
+        PRODUCT_BUNDLE_IDENTIFIER: dev.schonfeld.talaria.app.watchkitapp
+        INFOPLIST_KEY_WKCompanionAppBundleIdentifier: dev.schonfeld.talaria.app
         INFOPLIST_KEY_WKRunsIndependentlyOfCompanionApp: YES
         SWIFT_STRICT_CONCURRENCY: complete
 
   TalariaWatchWidgets:
     type: app-extension
     platform: watchOS
+    info:
+      path: .gauntlet/generated/TalariaWatchWidgets-Info.plist
+      properties:
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
     sources:
       - App/TalariaWatchWidgets
     dependencies:
       - package: HermesKit
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: dev.schonfeld.talaria.watchkitapp.widgets
+        GENERATE_INFOPLIST_FILE: NO
+        PRODUCT_BUNDLE_IDENTIFIER: dev.schonfeld.talaria.app.watchkitapp.widgets
         SKIP_INSTALL: YES
         SWIFT_STRICT_CONCURRENCY: complete
 
@@ -82,6 +110,8 @@ targets:
       - Tests/TalariaTests
     dependencies:
       - target: Talaria
+      # Xcode 26 runs App Intents metadata extraction for Swift test bundles too.
+      - sdk: AppIntents.framework
 
   TalariaUITests:
     type: bundle.ui-testing
@@ -90,6 +120,7 @@ targets:
       - Tests/TalariaUITests
     dependencies:
       - target: Talaria
+      - sdk: AppIntents.framework
 
   TalariaWatchUITests:
     type: bundle.ui-testing
@@ -98,6 +129,7 @@ targets:
       - Tests/TalariaWatchUITests
     dependencies:
       - target: TalariaWatch
+      - sdk: AppIntents.framework
 
 schemes:
   Talaria-iOS:

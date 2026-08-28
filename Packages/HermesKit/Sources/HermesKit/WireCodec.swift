@@ -1,10 +1,12 @@
-// Line framing + canonical encoding for the tui_gateway WebSocket protocol.
+import Foundation
+
+// Canonical JSON-RPC encoding plus newline-delimited stdio/fixture helpers.
+// WebSocket transports send one `encode` result per text message and do not
+// use the line-framing helpers.
 //
 // Canonical form: UTF-8, compact separators, lexicographically sorted object
 // keys, forward slashes unescaped. Every committed fixture is stored in this
 // form, which is what makes the G3 byte-identity gate well-defined.
-
-import Foundation
 
 public struct WireCodec: Sendable {
     public static let shared = WireCodec()
@@ -13,22 +15,22 @@ public struct WireCodec: Sendable {
     private let encoder: JSONEncoder
 
     public init() {
-        decoder = JSONDecoder()
-        encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        self.decoder = JSONDecoder()
+        self.encoder = JSONEncoder()
+        self.encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
     }
 
-    /// Decode one newline-delimited frame.
+    /// Decode one newline-delimited stdio or JSONL frame.
     public func decodeLine(_ line: String) throws -> JSONRPCEnvelope {
         guard let data = line.data(using: .utf8) else {
             throw CodecError.invalidUTF8
         }
-        return try decode(data)
+        return try self.decode(data)
     }
 
     public func decode(_ data: Data) throws -> JSONRPCEnvelope {
         do {
-            return try decoder.decode(JSONRPCEnvelope.self, from: data)
+            return try self.decoder.decode(JSONRPCEnvelope.self, from: data)
         } catch {
             throw CodecError.underlying(message: "decode failed: \(error)", cause: error)
         }
@@ -37,20 +39,20 @@ public struct WireCodec: Sendable {
     /// Canonical encoding (sorted keys, no whitespace).
     public func encode(_ envelope: JSONRPCEnvelope) throws -> Data {
         do {
-            return try encoder.encode(envelope)
+            return try self.encoder.encode(envelope)
         } catch {
             throw CodecError.underlying(message: "encode failed: \(error)", cause: error)
         }
     }
 
-    /// Canonical encoding plus the newline terminator.
+    /// Canonical encoding plus the stdio/JSONL newline terminator.
     public func frame(_ envelope: JSONRPCEnvelope) throws -> Data {
         var data = try encode(envelope)
         data.append(contentsOf: [0x0A])
         return data
     }
 
-    /// Split a received byte stream into logical frames. Blank lines are
+    /// Split a newline-delimited stdio byte stream into logical frames. Blank lines are
     /// skipped; a missing trailing newline on the final line is tolerated.
     public func splitFrames(_ payload: Data) -> [Data] {
         guard let text = String(data: payload, encoding: .utf8) else { return [] }
@@ -67,9 +69,9 @@ public enum CodecError: Error, CustomStringConvertible {
     public var description: String {
         switch self {
         case .invalidUTF8:
-            return "frame is not valid UTF-8"
-        case .underlying(let message, _):
-            return message
+            "frame is not valid UTF-8"
+        case let .underlying(message, _):
+            message
         }
     }
 }

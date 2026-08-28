@@ -27,6 +27,11 @@ identifier_name:
     - x
     - y
 
+# SwiftFormat 0.62.1's trailingCommas rule requires commas in multiline
+# collections. Enforce the same convention here so the pinned tools agree.
+trailing_comma:
+  mandatory_comma: true
+
 type_body_length:
   warning: 300
   error: 500

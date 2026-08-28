@@ -1,5 +1,5 @@
-import WidgetKit
 import SwiftUI
+import WidgetKit
 
 @main
 struct TalariaWidgetsBundle: WidgetBundle {
@@ -25,15 +25,15 @@ struct StatusEntry: TimelineEntry {
 }
 
 struct StatusProvider: TimelineProvider {
-    func placeholder(in context: Context) -> StatusEntry {
+    func placeholder(in _: Context) -> StatusEntry {
         StatusEntry(date: .now, headline: "Idle")
     }
 
-    func getSnapshot(in context: Context, completion: @escaping (StatusEntry) -> Void) {
+    func getSnapshot(in _: Context, completion: @escaping (StatusEntry) -> Void) {
         completion(StatusEntry(date: .now, headline: "Idle"))
     }
 
-    func getTimeline(in context: Context, completion: @escaping (Timeline<StatusEntry>) -> Void) {
+    func getTimeline(in _: Context, completion: @escaping (Timeline<StatusEntry>) -> Void) {
         let entry = StatusEntry(date: .now, headline: "Idle")
         completion(Timeline(entries: [entry], policy: .never))
     }
@@ -46,7 +46,7 @@ struct StatusEntryView: View {
         VStack(alignment: .leading, spacing: 4) {
             Image(systemName: "bolt.horizontal.circle")
                 .foregroundStyle(.tint)
-            Text(entry.headline)
+            Text(self.entry.headline)
                 .font(.headline)
             Text(Date.now, style: .time)
                 .font(.caption2)

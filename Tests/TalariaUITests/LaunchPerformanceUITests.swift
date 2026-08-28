@@ -1,35 +1,34 @@
 import XCTest
 
-/// G12 — cold-launch budget, enforced twice:
-///   1. XCTApplicationLaunchMetric records the official baseline into the
-///      result bundle.
-///   2. A wall-clock assertion gives the gate teeth: cold start must beat
-///      3.0 s measured from `launch()` to first asserted element. This is a
-///      harness-side proxy (includes simulator overhead); the streaming
-///      main-thread clause arms in P2 when live streams exist.
+/// G12 — record exactly five official cold-launch samples in the result
+/// bundle. The fail-closed Tier B checker enforces the absolute 3.0 s budget
+/// over these samples. It does not certify G12's separate streaming clause.
 final class LaunchPerformanceUITests: XCTestCase {
     @MainActor
-    func testLaunchMetricBaselineRecorded() throws {
+    func testLaunchMetricBaselineRecorded() {
         let app = XCUIApplication()
-        app.launch()
+        let rootElement = app.staticTexts["Talaria"]
+        self.terminateAndAssertNotRunning(app)
 
-        let metric = XCTApplicationLaunchMetric()
-        measure(metrics: [metric]) {
-            app.terminate()
+        let options = XCTMeasureOptions()
+        options.iterationCount = 5
+        measure(metrics: [XCTApplicationLaunchMetric()], options: options) {
+            XCTAssertEqual(app.state, .notRunning, "launch metric must start with the app terminated")
             app.launch()
+            XCTAssertTrue(
+                rootElement.waitForExistence(timeout: 10),
+                "expected root element did not appear during the measured launch"
+            )
+            self.terminateAndAssertNotRunning(app)
         }
     }
 
     @MainActor
-    func testColdLaunchWithinBudget() throws {
-        let app = XCUIApplication()
-
-        let clock = ContinuousClock()
-        let elapsed = try clock.measure {
-            app.launch()
-            _ = app.staticTexts["Talaria"].waitForExistence(timeout: 10)
-        }
-
-        XCTAssertLessThan(elapsed, .seconds(3), "cold launch exceeded the 3 s budget")
+    private func terminateAndAssertNotRunning(_ app: XCUIApplication) {
+        app.terminate()
+        XCTAssertTrue(
+            app.wait(for: .notRunning, timeout: 10),
+            "application did not reach the terminated state"
+        )
     }
 }
