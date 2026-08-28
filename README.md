@@ -9,8 +9,7 @@ being built against the real `tui_gateway` WebSocket JSON-RPC protocol.
 > No connection, chat, or approval functionality exists today.
 >
 > What does exist is the foundation: a source-derived protocol contract, a pure-Swift codec, a
-> sanitized capture fixture, and a verification harness. Audit repair is complete; final Phase 0
-> verification remains, and P1 has not begun.
+> sanitized capture fixture, and a verification harness. Phase 0 is complete; P1 has not begun.
 >
 > No releases, no TestFlight, no distribution. Watch the repository if you want to know when that
 > changes.
@@ -58,7 +57,7 @@ reviewed contract and its provenance are recorded in [docs/PROTOCOL.md](docs/PRO
 
 | Phase | Scope | State |
 | --- | --- | --- |
-| P0 | Scaffold, pinned protocol derivation, capture fixture, trustworthy gates | In progress — audit repair complete; final verification remains |
+| P0 | Scaffold, pinned protocol derivation, capture fixture, trustworthy gates | Complete |
 | P1 | HermesKit — transport, models, reconnect/replay, approval state, offline outbox, TLS TOFU trust store, mock gateway | Next after P0 closure |
 | P2 | Connection and first run — QR pairing, mDNS, Portal OAuth, trust acceptance, Keychain, multi-gateway profiles | Planned |
 | P3 | Chat and approvals — streaming sessions, tool cards, safe approvals, steering, rendering, attachments, localization | Planned |

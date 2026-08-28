@@ -368,6 +368,11 @@ class G4ClassificationTests(ShellClassifierTests):
         self.assertIn("--reporter json", g4)
         self.assertIn("check_swiftlint_report.py", g4)
         self.assertIn("talaria_classify_g4", g4)
+        self.assertIn(
+            '"$swiftformat_bin" --lint --verbose Packages/HermesKit App Tests',
+            g4,
+        )
+        self.assertNotIn('"$swiftformat_bin" --lint --quiet', g4)
         self.assertNotIn('"$swiftlint_bin" lint ', g4)
 
     def test_clean_results_with_valid_empty_report_pass(self) -> None:
