@@ -8,6 +8,12 @@ private enum AttemptSuspension: Sendable, Equatable {
     case none
 }
 
+private struct RequestRegistrationWaiter {
+    let expectedCount: Int
+    let suspension: AttemptSuspension
+    let continuation: CheckedContinuation<Void, Never>
+}
+
 private actor TransportRaceHarness: HermesWebSocketTicketAcquiring, HermesWebSocketConnecting {
     private let suspension: AttemptSuspension
     private let closeResumesSend: Bool
@@ -16,6 +22,8 @@ private actor TransportRaceHarness: HermesWebSocketTicketAcquiring, HermesWebSoc
     private var ticketWaiters: [Int: CheckedContinuation<HermesWebSocketTicket, Error>] = [:]
     private var connectorWaiters: [Int: CheckedContinuation<RaceConnection, Error>] = [:]
     private var sendWaiters: [Int: CheckedContinuation<Void, Error>] = [:]
+    private var requestRegistrationWaiters: [RequestRegistrationWaiter] = []
+    private var sendRegistrationWaiters: [Int: [CheckedContinuation<Void, Never>]] = [:]
     private var sendCounts: [Int: Int] = [:]
     private var closedAttempts: Set<Int> = []
 
@@ -32,6 +40,7 @@ private actor TransportRaceHarness: HermesWebSocketTicketAcquiring, HermesWebSoc
         }
         return try await withCheckedThrowingContinuation { continuation in
             self.ticketWaiters[attempt] = continuation
+            self.resumeSatisfiedRequestRegistrationWaiters()
         }
     }
 
@@ -43,26 +52,22 @@ private actor TransportRaceHarness: HermesWebSocketTicketAcquiring, HermesWebSoc
         }
         let connection: RaceConnection = try await withCheckedThrowingContinuation { continuation in
             self.connectorWaiters[attempt] = continuation
+            self.resumeSatisfiedRequestRegistrationWaiters()
         }
         return connection
     }
 
-    func waitForRequests(_ expected: Int, at suspension: AttemptSuspension) async -> Bool {
-        for _ in 0 ..< 1000 {
-            let observed = switch suspension {
-            case .ticket:
-                self.ticketRequestCount
-            case .connector:
-                self.connectorRequestCount
-            case .none:
-                0
-            }
-            if observed >= expected {
-                return true
-            }
-            await Task.yield()
+    func waitUntilRequestIsSuspended(_ expectedCount: Int, at suspension: AttemptSuspension) async {
+        guard self.requestCount(at: suspension) < expectedCount else { return }
+        await withCheckedContinuation { continuation in
+            self.requestRegistrationWaiters.append(
+                RequestRegistrationWaiter(
+                    expectedCount: expectedCount,
+                    suspension: suspension,
+                    continuation: continuation
+                )
+            )
         }
-        return false
     }
 
     func resolve(_ suspension: AttemptSuspension, attempt: Int, succeeds: Bool) -> Bool {
@@ -102,17 +107,18 @@ private actor TransportRaceHarness: HermesWebSocketTicketAcquiring, HermesWebSoc
         }
         try await withCheckedThrowingContinuation { continuation in
             self.sendWaiters[attempt] = continuation
+            let registrationWaiters = self.sendRegistrationWaiters.removeValue(forKey: attempt) ?? []
+            for registrationWaiter in registrationWaiters {
+                registrationWaiter.resume()
+            }
         }
     }
 
-    func waitForSend(attempt: Int) async -> Bool {
-        for _ in 0 ..< 1000 {
-            if self.sendCounts[attempt] == 1 {
-                return true
-            }
-            await Task.yield()
+    func waitUntilSendIsSuspended(attempt: Int) async {
+        guard self.sendWaiters[attempt] == nil else { return }
+        await withCheckedContinuation { continuation in
+            self.sendRegistrationWaiters[attempt, default: []].append(continuation)
         }
-        return false
     }
 
     func resolveSend(attempt: Int, succeeds: Bool) -> Bool {
@@ -150,6 +156,29 @@ private actor TransportRaceHarness: HermesWebSocketTicketAcquiring, HermesWebSoc
 
     func closeCount(for attempt: Int) -> Int {
         self.closedAttempts.contains(attempt) ? 1 : 0
+    }
+
+    private func requestCount(at suspension: AttemptSuspension) -> Int {
+        switch suspension {
+        case .ticket:
+            self.ticketRequestCount
+        case .connector:
+            self.connectorRequestCount
+        case .none:
+            0
+        }
+    }
+
+    private func resumeSatisfiedRequestRegistrationWaiters() {
+        var retained: [RequestRegistrationWaiter] = []
+        for waiter in self.requestRegistrationWaiters {
+            if self.requestCount(at: waiter.suspension) >= waiter.expectedCount {
+                waiter.continuation.resume()
+            } else {
+                retained.append(waiter)
+            }
+        }
+        self.requestRegistrationWaiters = retained
     }
 
     private static func ticket(for attempt: Int) -> HermesWebSocketTicket {
@@ -208,16 +237,14 @@ final class HermesTransportRaceTests: XCTestCase {
         let oldSend = Task {
             try await transport.send(.request(id: 1, method: "old.send"))
         }
-        let oldSendWaiting = await harness.waitForSend(attempt: 0)
-        XCTAssertTrue(oldSendWaiting)
+        await harness.waitUntilSendIsSuspended(attempt: 0)
 
         await transport.disconnect()
         _ = try await transport.connect()
         let replacementSend = Task {
             try await transport.send(.request(id: 2, method: "replacement.send"))
         }
-        let replacementSendWaiting = await harness.waitForSend(attempt: 1)
-        XCTAssertTrue(replacementSendWaiting)
+        await harness.waitUntilSendIsSuspended(attempt: 1)
         let oldSendResolved = await harness.resolveSend(attempt: 0, succeeds: true)
         XCTAssertTrue(oldSendResolved)
         await self.assertFailure(oldSend)
@@ -249,8 +276,7 @@ final class HermesTransportRaceTests: XCTestCase {
         let receive = Task {
             try await transport.receive()
         }
-        let receiveWaiting = await self.waitForMockReceive(gateway)
-        XCTAssertTrue(receiveWaiting)
+        try await gateway.waitForPendingReceiveForTesting()
 
         receive.cancel()
         await self.assertCancellation(receive)
@@ -274,8 +300,7 @@ final class HermesTransportRaceTests: XCTestCase {
         let connect = Task {
             try await transport.connect()
         }
-        let handshakeWaiting = await self.waitForMockReceive(gateway)
-        XCTAssertTrue(handshakeWaiting)
+        try await gateway.waitForPendingReceiveForTesting()
 
         connect.cancel()
         try await gateway.enqueueReady()
@@ -293,8 +318,7 @@ final class HermesTransportRaceTests: XCTestCase {
         let send = Task {
             try await transport.send(.request(id: 4, method: "cancel.send"))
         }
-        let sendWaiting = await harness.waitForSend(attempt: 0)
-        XCTAssertTrue(sendWaiting)
+        await harness.waitUntilSendIsSuspended(attempt: 0)
 
         send.cancel()
         await self.assertCancellation(send)
@@ -333,15 +357,13 @@ final class HermesTransportRaceTests: XCTestCase {
         let superseded = Task {
             try await transport.connect()
         }
-        let supersededWaiting = await harness.waitForRequests(1, at: suspension)
-        XCTAssertTrue(supersededWaiting)
+        await harness.waitUntilRequestIsSuspended(1, at: suspension)
         await transport.disconnect()
 
         let replacement = Task {
             try await transport.connect()
         }
-        let replacementWaiting = await harness.waitForRequests(2, at: suspension)
-        XCTAssertTrue(replacementWaiting)
+        await harness.waitUntilRequestIsSuspended(2, at: suspension)
         let supersededResolved = await harness.resolve(
             suspension,
             attempt: 0,
@@ -385,16 +407,6 @@ final class HermesTransportRaceTests: XCTestCase {
     private func configuration() throws -> HermesWebSocketConfiguration {
         let url = try XCTUnwrap(URL(string: "https://gateway.example.com"))
         return try HermesWebSocketConfiguration(baseURL: url)
-    }
-
-    private func waitForMockReceive(_ gateway: MockGateway) async -> Bool {
-        for _ in 0 ..< 1000 {
-            if await gateway.waitingReceiveCountForTesting() == 1 {
-                return true
-            }
-            await Task.yield()
-        }
-        return false
     }
 
     private func assertCancellation(_ task: Task<some Sendable, Error>) async {

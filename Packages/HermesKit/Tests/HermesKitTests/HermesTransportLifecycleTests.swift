@@ -11,6 +11,34 @@ private enum HandshakeInput: Sendable {
     case binary(Data)
 }
 
+private actor CancellableTestSuspension {
+    private var continuation: CheckedContinuation<Void, Error>?
+    private var isCancelled = false
+
+    func wait() async throws {
+        try await withTaskCancellationHandler {
+            try Task.checkCancellation()
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                if self.isCancelled {
+                    continuation.resume(throwing: CancellationError())
+                } else {
+                    self.continuation = continuation
+                }
+            }
+        } onCancel: {
+            Task {
+                await self.cancel()
+            }
+        }
+    }
+
+    private func cancel() {
+        self.isCancelled = true
+        self.continuation?.resume(throwing: CancellationError())
+        self.continuation = nil
+    }
+}
+
 @MainActor
 final class HermesTransportLifecycleTests: XCTestCase {
     func testHandshakeRejectsAnythingExceptWrappedReadyEvent() async throws {
@@ -82,24 +110,20 @@ final class HermesTransportLifecycleTests: XCTestCase {
 
     func testCancellationDuringHandshakeClosesSocket() async throws {
         let gateway = MockGateway()
+        let readinessDeadline = CancellableTestSuspension()
         await gateway.enqueueTicketReply(.issued(ticket: "cancel-ticket", ttlSeconds: 30))
         let transport = try gateway.makeTransport(
             configuration: self.configuration(),
             tokenProvider: self.provider(),
-            sleep: { duration in
-                try await Task<Never, Never>.sleep(for: duration)
+            sleep: { _ in
+                try await readinessDeadline.wait()
             }
         )
         let task = Task {
             try await transport.connect()
         }
 
-        for _ in 0 ..< 100 {
-            if await gateway.waitingReceiveCountForTesting() > 0 {
-                break
-            }
-            await Task.yield()
-        }
+        try await gateway.waitForPendingReceiveForTesting()
         let waitingCount = await gateway.waitingReceiveCountForTesting()
         XCTAssertEqual(waitingCount, 1)
         task.cancel()
@@ -130,12 +154,7 @@ final class HermesTransportLifecycleTests: XCTestCase {
         let firstReceive = Task {
             try await transport.receive()
         }
-        for _ in 0 ..< 100 {
-            if await gateway.waitingReceiveCountForTesting() > 0 {
-                break
-            }
-            await Task.yield()
-        }
+        try await gateway.waitForPendingReceiveForTesting()
         let duplicateError = await self.caughtError {
             _ = try await transport.receive()
         }

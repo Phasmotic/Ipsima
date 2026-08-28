@@ -59,12 +59,14 @@ public actor MockGateway: HermesHTTPDataLoading, HermesWebSocketConnecting {
     private var ticketReplies: [TicketReply] = []
     private var inbound: [Inbound] = []
     private var waitingReceives: [WaitingReceive] = []
+    private var receiveRegistrationObservers: [UInt64: CheckedContinuation<Void, Error>] = [:]
     private var issuedTickets: Set<String> = []
     private var requestRecords: [RequestRecord] = []
     private var dialURLs: [URL] = []
     private var sentTexts: [String] = []
     private var closedConnections: Set<UInt64> = []
     private var nextConnectionID: UInt64 = 1
+    private var nextReceiveRegistrationObserverID: UInt64 = 1
     private var closeCount = 0
 
     public init() {}
@@ -222,6 +224,11 @@ public actor MockGateway: HermesHTTPDataLoading, HermesWebSocketConnecting {
             self.waitingReceives.append(
                 WaitingReceive(connectionID: connectionID, continuation: continuation)
             )
+            let observers = Array(self.receiveRegistrationObservers.values)
+            self.receiveRegistrationObservers.removeAll()
+            for observer in observers {
+                observer.resume()
+            }
         }
     }
 
@@ -254,6 +261,27 @@ public actor MockGateway: HermesHTTPDataLoading, HermesWebSocketConnecting {
 
     func waitingReceiveCountForTesting() -> Int {
         self.waitingReceives.count
+    }
+
+    func waitForPendingReceiveForTesting() async throws {
+        guard self.waitingReceives.isEmpty else { return }
+        let observerID = self.nextReceiveRegistrationObserverID
+        self.nextReceiveRegistrationObserverID &+= 1
+        try await withTaskCancellationHandler {
+            try Task.checkCancellation()
+            try await withCheckedThrowingContinuation { continuation in
+                self.receiveRegistrationObservers[observerID] = continuation
+            }
+        } onCancel: {
+            Task {
+                await self.cancelReceiveRegistrationObserver(observerID)
+            }
+        }
+    }
+
+    private func cancelReceiveRegistrationObserver(_ observerID: UInt64) {
+        self.receiveRegistrationObservers.removeValue(forKey: observerID)?
+            .resume(throwing: CancellationError())
     }
 
     private func resume(

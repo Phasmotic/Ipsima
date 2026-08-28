@@ -27,9 +27,10 @@ GitHub is the durable project record. Expensive-to-reconstruct findings and any 
 requires owner or orchestrator action must be persisted in the authorized issue or pull request
 before work moves past them. Chat may point to that record but must not become its only copy.
 
-When posting through the owner's GitHub account, begin every public post exactly with
-`Codex here (via Mark's account):` so authorship is unambiguous. Use these coordination states
-exactly when they apply:
+On public repository surfaces—issue comments, pull request bodies, and pull request comments—
+begin every automated contribution exactly with `Codex (automated contributor) —` so automated
+authorship is unambiguous without disclosing an account relationship. Use these coordination
+states exactly when they apply:
 
 - `ACK (coordination)` — instructions received; coordination or a decision is next.
 - `ACK (building)` — authorized implementation is in progress.

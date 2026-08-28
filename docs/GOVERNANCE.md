@@ -82,6 +82,11 @@ Talaria is a public repository. A value that enters a tracked fixture, commit, p
 issue, or other public artifact must therefore be safe for permanent disclosure; later deletion
 does not undo publication.
 
+Every automated contribution to a public issue comment, pull request body, or pull request
+comment in this repository begins exactly with `Codex (automated contributor) —`. The prefix
+identifies automated authorship without publishing any relationship to the account used to post
+it. Existing public history is not rewritten when this protocol changes.
+
 ### Golden-capture boundary
 
 Golden fixtures come only from the source-bound capture harness. It requires a clean checkout at
