@@ -122,6 +122,10 @@ The one-time transport-link A/B study proves its contrast in each built
 map with its debug executor's map, and Swift can merge package sources into one relocatable
 object; neither is valid semantic evidence. A linker-rooted, never-executed factory thunk retains
 the real production transport initializer and networking witnesses only in the linked variant.
+The control's launch anchor retains a Talaria-local marker and no Talaria control source imports
+or references HermesKit; declaring the package dependency alone is not semantic evidence of a
+linked product. This matches the pre-P1.2 application source boundary while preventing the merged
+HermesKit object from contaminating the control through an otherwise harmless codec reference.
 Defined-symbol evidence must prove the common launch anchor, the linked-only factory anchor, the
 transport initializer, and the three production adapter witnesses before any of the twenty
 interleaved launches run. The semantic preflight has its own render, ordinary-success upload, and

@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 import unittest
 
 
@@ -18,6 +19,53 @@ BASELINE = REPO / "scripts" / "baselines" / "launch-structure-xcode-26.6-arm64.j
 PROJECT = REPO / "project.yml"
 BRIEF = REPO / "docs" / "BRIEF.md"
 GOVERNANCE = REPO / "docs" / "GOVERNANCE.md"
+
+
+def swift_source_without_transport_guarded_branches(source: str) -> str:
+    """Return lines that can remain when TALARIA_LINK_TRANSPORT is absent."""
+    guarded_branches: list[bool] = []
+    retained: list[str] = []
+    for line in source.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("#if "):
+            expression = stripped.removeprefix("#if ").strip()
+            if "TALARIA_LINK_TRANSPORT" in expression:
+                if expression != "TALARIA_LINK_TRANSPORT":
+                    raise AssertionError(
+                        "transport linkage must use the exact positive compilation guard"
+                    )
+                guarded_branches.append(True)
+            else:
+                guarded_branches.append(False)
+            continue
+        if stripped.startswith("#elseif "):
+            if not guarded_branches:
+                raise AssertionError("unbalanced Swift conditional compilation directive")
+            expression = stripped.removeprefix("#elseif ").strip()
+            if "TALARIA_LINK_TRANSPORT" in expression:
+                if expression != "TALARIA_LINK_TRANSPORT":
+                    raise AssertionError(
+                        "transport linkage must use the exact positive compilation guard"
+                    )
+                guarded_branches[-1] = True
+            else:
+                guarded_branches[-1] = False
+            continue
+        if stripped == "#else":
+            if not guarded_branches:
+                raise AssertionError("unbalanced Swift conditional compilation directive")
+            guarded_branches[-1] = False
+            continue
+        if stripped == "#endif":
+            if not guarded_branches:
+                raise AssertionError("unbalanced Swift conditional compilation directive")
+            guarded_branches.pop()
+            continue
+        if not any(guarded_branches):
+            retained.append(line)
+    if guarded_branches:
+        raise AssertionError("unbalanced Swift conditional compilation directive")
+    return "\n".join(retained)
 
 
 class G12ContractTests(unittest.TestCase):
@@ -133,8 +181,39 @@ class G12ContractTests(unittest.TestCase):
         self.assertIn("options.iterationCount = 1", launch_test)
         self.assertIn("It has no threshold", launch_test)
         self.assertIn("Talaria-LinkAB:", project)
-        self.assertIn("TALARIA_LINK_TRANSPORT", project)
+        self.assertIn(
+            'SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) TALARIA_LINK_TRANSPORT"',
+            project,
+        )
         self.assertNotIn("Talaria-LinkMap", project)
+        self.assertEqual(workflow.count("conditions='DEBUG'"), 2)
+        self.assertEqual(
+            workflow.count("conditions='DEBUG TALARIA_LINK_TRANSPORT'"), 2
+        )
+        self.assertEqual(
+            workflow.count('"SWIFT_ACTIVE_COMPILATION_CONDITIONS=$conditions"'), 2
+        )
+        for source_path in sorted((REPO / "App" / "Talaria").rglob("*.swift")):
+            control_source = swift_source_without_transport_guarded_branches(
+                source_path.read_text(encoding="utf-8")
+            )
+            uncommented_control_source = "\n".join(
+                line.split("//", maxsplit=1)[0]
+                for line in control_source.splitlines()
+            )
+            self.assertIsNone(
+                re.search(
+                    r"\b(?:Hermes[A-Z]\w*|WebSocketHermesTransport|WireCodec)\b",
+                    uncommented_control_source,
+                ),
+                f"control source references HermesKit product code: {source_path.name}",
+            )
+        self.assertIn("private enum LaunchLinkControlMarker {}", link_anchor)
+        self.assertIn(
+            "unsafeBitCast(LaunchLinkControlMarker.self, to: UnsafeRawPointer.self)",
+            link_anchor,
+        )
+        self.assertNotIn("WireCodec.self", link_anchor)
         self.assertIn('@_cdecl("talaria_transport_factory_link_anchor")', link_anchor)
         self.assertIn("@inline(never)", link_anchor)
         self.assertIn("AuditedLaunchResourceFactory.webSocketTransport", link_anchor)
@@ -143,6 +222,7 @@ class G12ContractTests(unittest.TestCase):
             "talariaTransportFactoryLinkAnchor as TransportFactoryLinkFunction",
             link_anchor,
         )
+        self.assertIn("import HermesKit", resource_factory)
         self.assertIn("return WebSocketHermesTransport(", resource_factory)
         observation_upload = workflow.index("Upload sanitized G12 per-iteration observation")
         build = workflow.index(

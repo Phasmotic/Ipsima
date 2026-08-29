@@ -1,5 +1,7 @@
 import Foundation
-import HermesKit
+#if TALARIA_LINK_TRANSPORT
+    import HermesKit
+#endif
 #if canImport(Network)
     import Network
 #endif

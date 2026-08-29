@@ -1,10 +1,10 @@
-import Foundation
-import HermesKit
-
-private typealias TransportFactoryLinkFunction =
-    @convention(c) (UnsafePointer<CChar>?) -> UnsafeMutableRawPointer?
-
 #if TALARIA_LINK_TRANSPORT
+    import Foundation
+    import HermesKit
+
+    private typealias TransportFactoryLinkFunction =
+        @convention(c) (UnsafePointer<CChar>?) -> UnsafeMutableRawPointer?
+
     private struct LaunchLinkBearerTokenProvider: HermesBearerTokenProvider {
         func bearerToken() async throws -> String {
             throw HermesTransportError.credentialUnavailable
@@ -33,8 +33,10 @@ private typealias TransportFactoryLinkFunction =
     }
 #endif
 
+private enum LaunchLinkControlMarker {}
+
 /// A linker-retained, never-executed reference that makes the A/B linkage contrast observable.
-/// The linked variant retains the factory thunk above; the control retains only the codec type.
+/// The linked variant retains the factory thunk above; the control retains only a local marker.
 @_cdecl("talaria_launch_link_anchor")
 func talariaLaunchLinkAnchor() -> UnsafeRawPointer {
     #if TALARIA_LINK_TRANSPORT
@@ -43,6 +45,6 @@ func talariaLaunchLinkAnchor() -> UnsafeRawPointer {
             to: UnsafeRawPointer.self
         )
     #else
-        unsafeBitCast(WireCodec.self, to: UnsafeRawPointer.self)
+        unsafeBitCast(LaunchLinkControlMarker.self, to: UnsafeRawPointer.self)
     #endif
 }
