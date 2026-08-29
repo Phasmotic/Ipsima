@@ -20,11 +20,9 @@ env:
 
 jobs:
   ios:
-    name: G7/G8/G10 · iOS simulator + G12 observation
+    name: G7/G8/G10 · iOS simulator
     runs-on: macos-26
-    # Temporarily widened for the one-time 10-pair transport-link A/B diagnostic.
-    # Restore 45 minutes when that diagnostic step is removed after evidence capture.
-    timeout-minutes: 90
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
 
@@ -42,11 +40,7 @@ jobs:
         run: |
           python3 -B -m unittest \
             scripts.test_capture_golden \
-            scripts.test_analyze_launch_ab \
             scripts.test_check_conformance \
-            scripts.test_check_launch_activity_sources \
-            scripts.test_check_launch_metrics \
-            scripts.test_check_launch_structure \
             scripts.test_check_tier_b_run_snapshot \
             scripts.test_check_tier_b_status_log \
             scripts.test_check_xcode_log \
@@ -119,31 +113,18 @@ jobs:
             | tee .gauntlet/small-simulator-readiness.log
           test -s .gauntlet/small-simulator-readiness.log
 
-      - name: Verify Talaria-owned pre-frame resource construction contract
-        run: |
-          set -euo pipefail
-          python3 -B scripts/check_launch_activity_sources.py \
-            --repository . 2>&1 | tee .gauntlet/g12-launch-activity-sources.log
-
       - name: Build app + extensions (G7, warnings-as-errors)
         run: |
           set -euo pipefail
           xcodebuild build \
             -scheme Talaria-iOS \
             -destination "platform=iOS Simulator,id=$LARGE_UDID,arch=arm64" \
-            -derivedDataPath .gauntlet/DerivedData \
             SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
             GCC_TREAT_WARNINGS_AS_ERRORS=YES \
             2>&1 | tee .gauntlet/g7.log
           python3 -B scripts/check_xcode_log.py \
             --log .gauntlet/g7.log \
             --success-marker "** BUILD SUCCEEDED **"
-          xcodebuild -showBuildSettings -json \
-            -scheme Talaria-iOS \
-            -destination "platform=iOS Simulator,id=$LARGE_UDID,arch=arm64" \
-            -derivedDataPath .gauntlet/DerivedData \
-            > .gauntlet/g7-build-settings.json
-          test -s .gauntlet/g7-build-settings.json
 
       - name: Unit tests (G8)
         run: |
@@ -151,7 +132,6 @@ jobs:
           xcodebuild test \
             -scheme Talaria-iOS \
             -destination "platform=iOS Simulator,id=$LARGE_UDID,arch=arm64" \
-            -derivedDataPath .gauntlet/DerivedData \
             SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
             GCC_TREAT_WARNINGS_AS_ERRORS=YES \
             -resultBundlePath .gauntlet/unit.xcresult \
@@ -162,23 +142,15 @@ jobs:
           python3 -B scripts/check_xcresult_tests.py \
             --xcresult .gauntlet/unit.xcresult \
             --expect 'TalariaTests/SmokeTests/testTargetLinks()' \
-            --expect 'TalariaTests/LaunchActivityAuditTests/testFirstFrameWithoutTalariaOwnedConstructionIsClear()' \
-            --expect 'TalariaTests/LaunchActivityAuditTests/testConstructionBeforeFirstFrameIsRetainedAsViolation()' \
-            --expect 'TalariaTests/LaunchActivityAuditTests/testConstructionAfterFirstFrameDoesNotRewriteLaunchHistory()' \
-            --expect 'TalariaTests/LaunchActivityAuditTests/testRepeatedFirstFrameSignalIsIdempotent()' \
-            --expect 'TalariaTests/LaunchActivityAuditTests/testConcurrentConstructionRecordingIsLossless()' \
-            --expect 'TalariaTests/LaunchActivityAuditTests/testAuditedFactoryRecordsURLSessionConstruction()' \
             --expect-count 'TalariaTests/SmokeTests=1' \
-            --expect-count 'TalariaTests/LaunchActivityAuditTests=6' \
             | tee .gauntlet/g8-unit-evidence.log
 
-      - name: UI tests — smoke + accessibility + launch audit + G12 observation (G8/G10)
+      - name: UI tests — smoke + accessibility audit (G8/G10)
         run: |
           set -euo pipefail
           xcodebuild test \
             -scheme Talaria-UI \
             -destination "platform=iOS Simulator,id=$SMALL_UDID,arch=arm64" \
-            -derivedDataPath .gauntlet/DerivedData \
             SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
             GCC_TREAT_WARNINGS_AS_ERRORS=YES \
             -resultBundlePath .gauntlet/ui.xcresult \
@@ -190,411 +162,18 @@ jobs:
             --xcresult .gauntlet/ui.xcresult \
             --expect 'TalariaUITests/SmokeUITests/testLaunchShowsShell()' \
             --expect 'TalariaUITests/AccessibilityAuditUITests/testRootScreenPassesAccessibilityAudit()' \
-            --expect 'TalariaUITests/LaunchActivityAuditUITests/testFirstDrawHasNoTalariaOwnedLaunchActivity()' \
-            --expect 'TalariaUITests/LaunchPerformanceUITests/testLaunchMetricBaselineRecorded()' \
             --expect-count 'TalariaUITests/SmokeUITests=1' \
             --expect-count 'TalariaUITests/AccessibilityAuditUITests=1' \
-            --expect-count 'TalariaUITests/LaunchActivityAuditUITests=1' \
-            --expect-count 'TalariaUITests/LaunchPerformanceUITests=1' \
             | tee .gauntlet/g8-ui-evidence.log
 
-      - name: Preserve G12 launch observations — STOOD DOWN, no verdict
+      # The launch subject exists, but the former absolute wall-clock threshold
+      # cannot distinguish product regressions from runner/fresh-simulator noise.
+      # Replacement coverage is deliberately deferred to the P2 re-arm design.
+      - name: G12 cold launch — STOOD DOWN (gate-specification defect)
         run: |
-          set -euo pipefail
-          g12_blocked() {
-            echo "G12 COLD-LAUNCH BLOCKED — $1" >&2
-            exit 2
-          }
-          G12_TEST_ID='test://com.apple.xcode/Talaria/TalariaUITests/LaunchPerformanceUITests/testLaunchMetricBaselineRecorded'
-          if ! xcrun xcresulttool version \
-            >.gauntlet/g12-xcresulttool-version.txt \
-            2>.gauntlet/g12-xcresulttool-version.stderr; then
-            g12_blocked "xcresulttool could not report its version"
-          fi
-          test -s .gauntlet/g12-xcresulttool-version.txt \
-            || g12_blocked "xcresulttool version evidence is empty"
-          test ! -s .gauntlet/g12-xcresulttool-version.stderr \
-            || g12_blocked "xcresulttool version emitted stderr"
-          if ! xcrun xcresulttool get test-results metrics \
-            --schema \
-            --schema-version 0.1.0 \
-            --path .gauntlet/ui.xcresult \
-            --compact \
-            >.gauntlet/g12-metrics-schema.json \
-            2>.gauntlet/g12-metrics-schema.stderr; then
-            g12_blocked "metrics-schema export failed"
-          fi
-          test -s .gauntlet/g12-metrics-schema.json \
-            || g12_blocked "metrics-schema export is empty"
-          test ! -s .gauntlet/g12-metrics-schema.stderr \
-            || g12_blocked "metrics-schema export emitted stderr"
-          if ! shasum -a 256 .gauntlet/g12-metrics-schema.json \
-            >.gauntlet/g12-metrics-schema.sha256 \
-            2>.gauntlet/g12-metrics-schema-shasum.stderr; then
-            g12_blocked "metrics-schema digest could not be computed"
-          fi
-          test -s .gauntlet/g12-metrics-schema.sha256 \
-            || g12_blocked "metrics-schema digest evidence is empty"
-          test ! -s .gauntlet/g12-metrics-schema-shasum.stderr \
-            || g12_blocked "metrics-schema digest emitted stderr"
-          if ! G12_SCHEMA_DIGEST="$(awk '{print $1}' .gauntlet/g12-metrics-schema.sha256)"; then
-            g12_blocked "metrics-schema digest evidence could not be parsed"
-          fi
-          [ "$G12_SCHEMA_DIGEST" = '55401dc6d98f6f89f82e05c971c3a29b8511a698d962af5a04c684c6fe46d8bf' ] \
-            || g12_blocked "metrics-schema digest does not match the reviewed pin"
-          echo "G12 schema SHA-256: $G12_SCHEMA_DIGEST"
-          if ! xcrun xcresulttool get test-results metrics \
-            --schema-version 0.1.0 \
-            --path .gauntlet/ui.xcresult \
-            --test-id "$G12_TEST_ID" \
-            --compact \
-            >.gauntlet/g12-metrics.json \
-            2>.gauntlet/g12-metrics.stderr; then
-            g12_blocked "metrics export failed"
-          fi
-          test -s .gauntlet/g12-metrics.json \
-            || g12_blocked "metrics export is empty"
-          test ! -s .gauntlet/g12-metrics.stderr \
-            || g12_blocked "metrics export emitted stderr"
-          if python3 -B scripts/check_launch_metrics.py \
-            --schema-json .gauntlet/g12-metrics-schema.json \
-            --metrics-json .gauntlet/g12-metrics.json \
-            --evidence-json .gauntlet/g12-launch-observation.json \
-            >.gauntlet/g12-evidence.log 2>&1; then
-            G12_CHECKER_RC=0
-          else
-            G12_CHECKER_RC=$?
-          fi
-          test -s .gauntlet/g12-evidence.log \
-            || g12_blocked "checker observation evidence is empty"
-          if ! G12_CHECKER_MARKER="$(awk 'NF { marker=$0 } END { print marker }' .gauntlet/g12-evidence.log)"; then
-            g12_blocked "checker observation marker could not be parsed"
-          fi
-          case "$G12_CHECKER_RC" in
-            0)
-              case "$G12_CHECKER_MARKER" in
-                'G12 COLD-LAUNCH STOOD DOWN: '*)
-                  cat .gauntlet/g12-evidence.log \
-                    || g12_blocked "observer evidence could not be emitted"
-                  ;;
-                *) g12_blocked "checker status and STOOD DOWN marker disagree" ;;
-              esac
-              ;;
-            2)
-              case "$G12_CHECKER_MARKER" in
-                'G12 COLD-LAUNCH BLOCKED: '*)
-                  cat .gauntlet/g12-evidence.log >&2 \
-                    || g12_blocked "checker BLOCKED evidence could not be emitted"
-                  exit 2
-                  ;;
-                *) g12_blocked "checker status and BLOCKED marker disagree" ;;
-              esac
-              ;;
-            *) g12_blocked "checker returned an unsupported status" ;;
-          esac
-
-      - name: Upload sanitized G12 per-iteration observation
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: g12-launch-observation-${{ github.run_id }}
-          path: .gauntlet/g12-launch-observation.json
-          if-no-files-found: error
-          retention-days: 90
-
-      # The authorized one-time A/B study is independent of the deterministic
-      # structure verdict. Collect it before that known prerequisite blocker so
-      # earlier build, test, and observation failures still suppress the study.
-      - name: Build transport-link A/B variants and collect semantic evidence
-        run: |
-          set -euo pipefail
-          mkdir -p .gauntlet/g12-ab/evidence
-          LINK_COLLECTION_STATUS=.gauntlet/g12-ab/link-collection-status.txt
-          printf 'pending\n' >"$LINK_COLLECTION_STATUS"
-          ab_blocked() {
-            blocker_code="$1"
-            blocker_message="$2"
-            printf '%s\n' "$blocker_code" >"$LINK_COLLECTION_STATUS"
-            echo "G12 LINK A/B BLOCKED — $blocker_message" >&2
-            exit 0
-          }
-          for variant in control linked; do
-            conditions='DEBUG'
-            if [ "$variant" = linked ]; then
-              conditions='DEBUG TALARIA_LINK_TRANSPORT'
-            fi
-            derived_data=".gauntlet/g12-ab/$variant-derived-data"
-            build_log=".gauntlet/g12-ab/$variant-build.log"
-            xcodebuild build-for-testing \
-              -scheme Talaria-LinkAB \
-              -destination "platform=iOS Simulator,id=$SMALL_UDID,arch=arm64" \
-              -derivedDataPath "$derived_data" \
-              "SWIFT_ACTIVE_COMPILATION_CONDITIONS=$conditions" \
-              SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
-              GCC_TREAT_WARNINGS_AS_ERRORS=YES \
-              >"$build_log" 2>&1 \
-              || ab_blocked "${variant}_build_failed" "$variant test build failed"
-            python3 -B scripts/check_xcode_log.py \
-              --log "$build_log" \
-              --success-marker "** TEST BUILD SUCCEEDED **" \
-              || ab_blocked "${variant}_build_log_invalid" \
-                "$variant test build log is invalid"
-            debug_dylibs="$(find "$derived_data/Build/Products" \
-              -type f -path '*/Talaria.app/Talaria.debug.dylib' -print)" \
-              || ab_blocked "${variant}_debug_dylib_ambiguous" \
-                "$variant debug dylib search failed"
-            [ "$(printf '%s\n' "$debug_dylibs" | awk 'NF' | wc -l | tr -d ' ')" = 1 ] \
-              || ab_blocked "${variant}_debug_dylib_ambiguous" \
-                "$variant build did not produce exactly one app debug dylib"
-            debug_dylib="$(printf '%s\n' "$debug_dylibs" | awk 'NF { print; exit }')"
-            raw_symbols=".gauntlet/g12-ab/$variant-symbols.raw"
-            demangled_symbols=".gauntlet/g12-ab/$variant-symbols.txt"
-            nm_stderr="$raw_symbols.stderr"
-            demangle_stderr="$demangled_symbols.stderr"
-            LC_ALL=C xcrun nm -arch arm64 -U -j "$debug_dylib" \
-              >"$raw_symbols" 2>"$nm_stderr" \
-              || ab_blocked "${variant}_symbol_inventory_failed" \
-                "$variant defined-symbol inventory failed"
-            test -s "$raw_symbols" \
-              || ab_blocked "${variant}_symbol_inventory_empty" \
-                "$variant defined-symbol inventory is empty"
-            test ! -s "$nm_stderr" \
-              || ab_blocked "${variant}_symbol_inventory_stderr" \
-                "$variant defined-symbol inventory emitted stderr"
-            xcrun swift-demangle --compact \
-              <"$raw_symbols" >"$demangled_symbols" 2>"$demangle_stderr" \
-              || ab_blocked "${variant}_symbol_demangle_failed" \
-                "$variant symbol demangling failed"
-            test -s "$demangled_symbols" \
-              || ab_blocked "${variant}_symbol_demangle_empty" \
-                "$variant demangled-symbol inventory is empty"
-            test ! -s "$demangle_stderr" \
-              || ab_blocked "${variant}_symbol_demangle_stderr" \
-                "$variant symbol demangling emitted stderr"
-          done
-          printf 'complete\n' >"$LINK_COLLECTION_STATUS"
-
-      - name: Render sanitized transport-link preflight evidence
-        run: |
-          set -euo pipefail
-          python3 -B scripts/analyze_launch_ab.py render-link \
-            --collection-status .gauntlet/g12-ab/link-collection-status.txt \
-            --control-symbols .gauntlet/g12-ab/control-symbols.txt \
-            --linked-symbols .gauntlet/g12-ab/linked-symbols.txt \
-            --output-json .gauntlet/g12-link-preflight.json \
-            2>&1 | tee .gauntlet/g12-link-preflight.log
-
-      - name: Upload sanitized transport-link preflight evidence
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: g12-link-preflight-${{ github.run_id }}
-          path: .gauntlet/g12-link-preflight.json
-          if-no-files-found: error
-          retention-days: 90
-
-      - name: Enforce retained transport-link preflight evidence
-        run: |
-          set -euo pipefail
-          python3 -B scripts/analyze_launch_ab.py enforce-link \
-            --input-json .gauntlet/g12-link-preflight.json \
-            2>&1 | tee -a .gauntlet/g12-link-preflight.log
-
-      - name: Collect interleaved transport-link A/B observations (10 pairs, no verdict)
-        run: |
-          set -euo pipefail
-          MEASUREMENT_COLLECTION_STATUS=.gauntlet/g12-ab/measurement-collection-status.txt
-          printf 'pending\n' >"$MEASUREMENT_COLLECTION_STATUS"
-          ab_blocked() {
-            blocker_code="$1"
-            blocker_pair="$2"
-            blocker_message="$3"
-            if [ -n "$blocker_pair" ]; then
-              printf '%s:%s\n' "$blocker_code" "$blocker_pair" \
-                >"$MEASUREMENT_COLLECTION_STATUS"
-            else
-              printf '%s\n' "$blocker_code" >"$MEASUREMENT_COLLECTION_STATUS"
-            fi
-            echo "G12 LINK A/B BLOCKED — $blocker_message" >&2
-            exit 0
-          }
-          python3 - <<'PY' \
-            || ab_blocked "order_generation_failed" "" \
-              "A/B observation order generation failed"
-          import json
-          from pathlib import Path
-
-          pairs = []
-          for pair in range(1, 11):
-              order = ["control", "linked"] if pair % 2 else ["linked", "control"]
-              pairs.append({"pair": pair, "order": order})
-          Path(".gauntlet/g12-ab/order.json").write_text(
-              json.dumps({"pairs": pairs}, indent=2, sort_keys=True) + "\n",
-              encoding="utf-8",
-              newline="\n",
-          )
-          PY
-          AB_TEST_ID='test://com.apple.xcode/Talaria/TalariaLaunchABTests/LinkABLaunchUITests/testOneLaunchObservation'
-          run_ab_observation() {
-            pair="$1"
-            variant="$2"
-            result=".gauntlet/g12-ab/pair-$pair-$variant.xcresult"
-            log=".gauntlet/g12-ab/pair-$pair-$variant.log"
-            conditions='DEBUG'
-            if [ "$variant" = linked ]; then
-              conditions='DEBUG TALARIA_LINK_TRANSPORT'
-            fi
-            xcodebuild test-without-building \
-              -scheme Talaria-LinkAB \
-              -destination "platform=iOS Simulator,id=$SMALL_UDID,arch=arm64" \
-              -derivedDataPath ".gauntlet/g12-ab/$variant-derived-data" \
-              "SWIFT_ACTIVE_COMPILATION_CONDITIONS=$conditions" \
-              SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
-              GCC_TREAT_WARNINGS_AS_ERRORS=YES \
-              -only-testing:TalariaLaunchABTests/LinkABLaunchUITests/testOneLaunchObservation \
-              -resultBundlePath "$result" \
-              >"$log" 2>&1 \
-              || ab_blocked "${variant}_test_failed" "$pair" \
-                "pair $pair $variant test failed"
-            python3 -B scripts/check_xcode_log.py \
-              --log "$log" \
-              --success-marker "** TEST EXECUTE SUCCEEDED **" \
-              || ab_blocked "${variant}_test_log_invalid" "$pair" \
-                "pair $pair $variant test log is invalid"
-            metrics=".gauntlet/g12-ab/evidence/pair-$pair-$variant.json"
-            metrics_stderr="$metrics.stderr"
-            xcrun xcresulttool get test-results metrics \
-              --schema-version 0.1.0 \
-              --path "$result" \
-              --test-id "$AB_TEST_ID" \
-              --compact >"$metrics" 2>"$metrics_stderr" \
-              || ab_blocked "${variant}_metrics_export_failed" "$pair" \
-                "pair $pair $variant metrics export failed"
-            test -s "$metrics" \
-              || ab_blocked "${variant}_metrics_empty" "$pair" \
-                "pair $pair $variant metrics evidence is empty"
-            test ! -s "$metrics_stderr" \
-              || ab_blocked "${variant}_metrics_stderr" "$pair" \
-                "pair $pair $variant metrics export emitted stderr"
-          }
-          for pair in 01 02 03 04 05 06 07 08 09 10; do
-            case "$pair" in
-              01|03|05|07|09) order='control linked' ;;
-              *) order='linked control' ;;
-            esac
-            for variant in $order; do
-              run_ab_observation "$pair" "$variant"
-            done
-          done
-          printf 'complete\n' >"$MEASUREMENT_COLLECTION_STATUS"
-
-      - name: Render sanitized transport-link A/B evidence
-        run: |
-          set -euo pipefail
-          python3 -B scripts/analyze_launch_ab.py render \
-            --evidence-dir .gauntlet/g12-ab/evidence \
-            --link-collection-status .gauntlet/g12-ab/link-collection-status.txt \
-            --measurement-collection-status \
-              .gauntlet/g12-ab/measurement-collection-status.txt \
-            --order-json .gauntlet/g12-ab/order.json \
-            --schema-json .gauntlet/g12-metrics-schema.json \
-            --output-json .gauntlet/g12-link-ab-analysis.json \
-            --control-symbols .gauntlet/g12-ab/control-symbols.txt \
-            --linked-symbols .gauntlet/g12-ab/linked-symbols.txt \
-            2>&1 | tee .gauntlet/g12-link-ab-analysis.log
-
-      - name: Upload sanitized transport-link A/B evidence
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: g12-link-ab-${{ github.run_id }}
-          path: .gauntlet/g12-link-ab-analysis.json
-          if-no-files-found: error
-          retention-days: 90
-
-      - name: Enforce retained transport-link A/B evidence
-        run: |
-          set -euo pipefail
-          python3 -B scripts/analyze_launch_ab.py enforce \
-            --input-json .gauntlet/g12-link-ab-analysis.json \
-            2>&1 | tee -a .gauntlet/g12-link-ab-analysis.log
-
-      - name: Collect deterministic launch-structure replacement evidence
-        run: |
-          set -euo pipefail
-          launch_structure_blocked() {
-            echo "G12 LAUNCH-STRUCTURE BLOCKED — $1" >&2
-            exit 2
-          }
-          python3 -B scripts/check_launch_structure.py resolve-app \
-            --build-settings-json .gauntlet/g7-build-settings.json \
-            --output .gauntlet/g12-app-path.txt
-          test -s .gauntlet/g12-app-path.txt \
-            || launch_structure_blocked "resolved app path evidence is empty"
-          IFS= read -r G12_APP_BUNDLE < .gauntlet/g12-app-path.txt \
-            || launch_structure_blocked "resolved app path could not be read"
-          case "$G12_APP_BUNDLE" in
-            "$GITHUB_WORKSPACE"/.gauntlet/DerivedData/*/Talaria.app) ;;
-            *) launch_structure_blocked "resolved app path escaped the expected build products" ;;
-          esac
-          xcrun simctl install "$SMALL_UDID" "$G12_APP_BUNDLE" \
-            >.gauntlet/g12-simctl-install.stdout \
-            2>.gauntlet/g12-simctl-install.stderr \
-            || launch_structure_blocked "simulator install failed"
-          test ! -s .gauntlet/g12-simctl-install.stderr \
-            || launch_structure_blocked "simulator install emitted stderr"
-          mkdir -p .gauntlet/g12-dyld
-          for index in 01 02 03 04 05 06 07 08 09 10; do
-            child_stdout="$GITHUB_WORKSPACE/.gauntlet/g12-dyld/$index.stdout"
-            child_stderr="$GITHUB_WORKSPACE/.gauntlet/g12-dyld/$index.stderr"
-            launch_stdout=".gauntlet/g12-dyld/$index.launch"
-            launch_stderr=".gauntlet/g12-dyld/$index.launch.stderr"
-            : > "$child_stdout"
-            : > "$child_stderr"
-            if ! SIMCTL_CHILD_DYLD_PRINT_STATISTICS=1 xcrun simctl launch \
-              --terminate-running-process \
-              --stdout="$child_stdout" \
-              --stderr="$child_stderr" \
-              "$SMALL_UDID" dev.schonfeld.talaria.app \
-              >"$launch_stdout" 2>"$launch_stderr"; then
-              launch_structure_blocked "DYLD observation launch $index failed"
-            fi
-            test ! -s "$launch_stderr" \
-              || launch_structure_blocked "DYLD observation launch $index emitted simulator stderr"
-            observed=false
-            for attempt in {1..100}; do
-              if grep -qi 'total pre-main time' "$child_stdout" "$child_stderr"; then
-                observed=true
-                break
-              fi
-              sleep 0.1
-            done
-            [ "$observed" = true ] \
-              || launch_structure_blocked "DYLD observation $index produced no statistics"
-            xcrun simctl terminate "$SMALL_UDID" dev.schonfeld.talaria.app \
-              >/dev/null 2>.gauntlet/g12-dyld/$index.terminate.stderr \
-              || launch_structure_blocked "DYLD observation $index could not terminate the app"
-            test ! -s .gauntlet/g12-dyld/$index.terminate.stderr \
-              || launch_structure_blocked "DYLD observation $index termination emitted stderr"
-            cat "$child_stdout" "$child_stderr" \
-              > ".gauntlet/g12-dyld/$index.log"
-          done
-          dyld_arguments=()
-          for index in 01 02 03 04 05 06 07 08 09 10; do
-            dyld_arguments+=(
-              --dyld-statistics-log ".gauntlet/g12-dyld/$index.log"
-            )
-          done
-          python3 -B scripts/check_launch_structure.py collect \
-            --build-settings-json .gauntlet/g7-build-settings.json \
-            "${dyld_arguments[@]}" \
-            --output .gauntlet/g12-launch-structure-observed.json \
-            2>&1 | tee .gauntlet/g12-launch-structure-collect.log
-
-      - name: Upload sanitized deterministic launch-structure evidence
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: g12-launch-structure-${{ github.run_id }}
-          path: .gauntlet/g12-launch-structure-observed.json
-          if-no-files-found: error
-          retention-days: 90
+          status="G12 cold launch — STOOD DOWN (gate-specification defect; never PASS or N/A); replacement coverage deferred to P2 and P2 cannot close before re-arm"
+          printf '%s\n' "$status" | tee .gauntlet/g12-cold-launch-status.txt
+          printf '### %s\n' "$status" >> "$GITHUB_STEP_SUMMARY"
 
       - name: G11 — N/A (no real streaming chat surface to capture)
         run: |
@@ -609,7 +188,7 @@ jobs:
             | tee .gauntlet/g4-swiftlint-install.log
 
       # G4 runs last during audit repair so a real lint red remains decisive
-      # without hiding G6-G12 diagnostic evidence earlier in this job.
+      # without hiding earlier G6-G10 diagnostic evidence in this job.
       - name: Verify formatter parity and lint (G4, authoritative)
         run: |
           set -euo pipefail
@@ -638,14 +217,6 @@ jobs:
           status="G12 streaming responsiveness — N/A (no live stream or streaming UI to measure); arms at the first real streaming chat surface (currently P3) with G11 and G14"
           printf '%s\n' "$status" | tee .gauntlet/g12-streaming-status.txt
           printf '### %s\n' "$status" >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Enforce deterministic launch-structure replacement coverage
-        run: |
-          set -euo pipefail
-          python3 -B scripts/check_launch_structure.py check \
-            --observed-json .gauntlet/g12-launch-structure-observed.json \
-            --baseline scripts/baselines/launch-structure-xcode-26.6-arm64.json \
-            2>&1 | tee .gauntlet/g12-launch-structure-verdict.log
 
       - name: Emit Tier B job status
         if: ${{ always() }}

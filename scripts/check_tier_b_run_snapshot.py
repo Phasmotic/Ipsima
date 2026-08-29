@@ -20,7 +20,7 @@ BLOCKED_MARKER = (
     "or contradictory"
 )
 EXPECTED_JOBS = {
-    "ios": "G7/G8/G10 · iOS simulator + G12 observation",
+    "ios": "G7/G8/G10 · iOS simulator",
     "watchos": "G9 · watch app + widgets + UI smoke",
     "archive": "G13 · unsigned archive links everything",
 }

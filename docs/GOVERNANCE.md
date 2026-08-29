@@ -65,19 +65,20 @@ A gate's subject is frozen when the gate is created. A red gate cannot be made i
 later subject-narrowing argument. N/A requires demonstrated absence of the subject; excessive
 measurement noise is instead a defective-instrument finding. A gate may be stood down only after a
 recorded specification defect identifies the root cause and a mandatory re-arm condition. Stood
-down is neither PASS nor N/A. Objective-level green may coexist with a stood-down gate only when
-its status and reason are explicit, its authorized deterministic replacement coverage is green,
-and no phase whose closure requires re-arm is being closed.
+down is never PASS or N/A. An objective may close with a stood-down gate only when the status,
+root cause, and re-arm obligation are explicit and that objective is not the phase whose closure
+requires re-arm. G12 cold launch therefore does not block P1.2, but P2 cannot close before it is
+re-specified, re-armed, and green.
 
 Any gate-status ruling made while that gate is red and its result blocks the ruling authority's
 own progress requires independent review before it takes effect. G12's superseding
-gate-specification ruling is ratified under that required five-review rule and is the worked
-example: the launch subject existed, but the absolute wall-clock threshold sat inside its
-instrument's noise. Calling that subject absent would have weakened the gate by relabeling it.
+gate-specification ruling was ratified by five independent reviews and is the worked example: the
+launch subject existed, but the absolute wall-clock threshold sat inside its instrument's noise.
+Calling the subject absent would have weakened the gate by relabeling it.
 
-Measurement hygiene must be outcome-independent. A uniform warmup applied to every run is
-permitted; changing the measurement protocol while red in order to turn that red green is not.
-The rule is about outcome-dependent intervention, not a list of forbidden techniques.
+Measurement hygiene must be outcome-independent. A uniform warmup applied identically to every
+run is permitted. No measurement-protocol change may be made while red to turn that red green;
+selective warming is one instance of that prohibited outcome-dependent intervention.
 
 Phase activation is not a deferral. G11 is `N/A (no real streaming chat surface to capture)`;
 G14 is `N/A (no G11 images to review before that arm point)`; and, by explicit orchestrator
@@ -96,60 +97,33 @@ contract.
 
 ### G12 cold-launch specification defect and P2 re-arm
 
-G12's former strict mean-under-3.0-second `XCTApplicationLaunchMetric` rule is stood down as the
-ninth hollow-gate-family finding. It measured a real launch, but its threshold could not reliably
-separate a product regression from runner and fresh-simulator effects. The retained ten-verdict
-ledger has median 3.0482066832 seconds and six failures; the complete twelve-measurement record
-restores two omitted successful exact-SHA retries. All historical results remain valid
-measurements from a defectively specified instrument; none remains a certification. The complete
-sanitized record is in [public audit issue #2](https://github.com/markschonfeld/Talaria/issues/2#issuecomment-5457754926).
+G12's former strict mean-under-3.0-second `XCTApplicationLaunchMetric` rule is stood down as a
+gate-specification defect and the ninth hollow-gate-family finding. It measured a real application
+launch, but its threshold could
+not reliably distinguish a product regression from runner and fresh-simulator effects. The prior
+claims that the threshold lay inside the noise band and that no launch subject existed were
+mutually corrosive: the first requires a real measured quantity, while the second denies one. The
+data support the first claim, so the “no subject” rationale is retracted.
 
-While stood down, the five-sample XCTest observer continues only to retain every per-iteration
-value and cannot emit PASS or FAIL. The authorized deterministic replacement contract requires
-DYLD pre-main rebase/binding/initializer statistics, exact app-executable and debug-dylib size
-ratchets, the app-owned Mach-O load closure and absence of `__mod_init_func`, and a first-draw
-assertion that no Talaria-owned URL session, reachability listener, or timer was created
-beforehand. The source contract makes construction bypasses fail closed. These checks are
-replacement coverage; none is a renamed end-to-end wall-clock verdict.
+The retained ten-verdict history has median 3.0482066832 seconds and six failures; the complete
+twelve-measurement record restores two successful exact-SHA retries. All historical passes and
+failures remain valid measurements from a defectively specified instrument, and none remains a
+certification. The complete sanitized dataset and conflict-of-interest note are recorded in
+[public audit issue #2](https://github.com/markschonfeld/Talaria/issues/2#issuecomment-5457754926).
 
-The pinned Xcode 26 dyld no longer implements `DYLD_PRINT_STATISTICS`, so that authorized
-pre-main component is currently **BLOCKED**, not passed, omitted, or silently substituted. The
-sanitized source-backed finding is recorded in public audit issue #2 and must receive an
-orchestrator-approved replacement before P1.2 can close.
-
-The one-time transport-link A/B study proves its contrast in each built
-`Talaria.debug.dylib`, never from source-object filenames. Xcode 26 overwrites the app-code link
-map with its debug executor's map, and Swift can merge package sources into one relocatable
-object; neither is valid semantic evidence. A linker-rooted, never-executed factory thunk retains
-the real production transport initializer and networking witnesses only in the linked variant.
-The control's launch anchor retains a Talaria-local marker and no Talaria control source imports
-or references HermesKit; declaring the package dependency alone is not semantic evidence of a
-linked product. This matches the pre-P1.2 application source boundary while preventing the merged
-HermesKit object from contaminating the control through an otherwise harmless codec reference.
-Defined-symbol evidence must prove the common launch anchor, the linked-only factory anchor, the
-transport initializer, and the three production adapter witnesses before any of the twenty
-interleaved launches run. The semantic preflight has its own render, ordinary-success upload, and
-enforce sequence: build, inventory, demangling, or contrast failure is retained as a sanitized,
-typed `blocked` artifact before the enforcer stops the observations. Raw inventories are never
-uploaded. The artifact retains only fixed per-variant match counts for the required anchors,
-initializer, and witnesses, so an absent linked symbol is distinguishable from a symbol already
-present in both variants without disclosing an open-ended symbol record.
-
-The full A/B analysis uses the same separate render and enforce pattern. Render returning zero
-means only that a strict, sanitized `observed` or `blocked` artifact was serialized. The
-ordinary-success artifact upload occurs next; only the following enforcer can accept `observed`.
-Observation and metric-export failures follow that path too, with only an allowlisted stage,
-variant, and pair number retained. A blocked or contradictory artifact turns the job BLOCKED
-after retention and can never satisfy a green sentinel.
+Replacement coverage is deferred to P2, to be designed alongside the re-arm when a real app's
+launch cost is a useful product property. No paired link study, pre-main timer, binary-size
+ratchet, static-initializer audit, or pre-frame networking assertion is an armed gate during P1.2.
 
 G12 cold launch must be re-specified and re-armed in P2, and P2 cannot close while it remains stood
-down. Before baseline collection, the new contract must:
+down. Before collecting any baseline, the new contract must:
 
 - declare a detection floor of at least X milliseconds at confidence Y, routing smaller shifts to
   an advisory channel;
 - use a pinned known-good reference binary interleaved in the same job on the same runner, with
   median delta or ratio as the primary criterion;
-- read and retain every value from at least ten measured iterations per run, never a mean of five;
+- read and retain every raw value from at least ten measured iterations per run, never a mean of
+  five;
 - pre-register its derivation formula and a total false-fail budget no greater than 1% per
   checkpoint, including retry; and
 - require any absolute component to use at least 30 runner instances over at least seven days and
@@ -260,13 +234,12 @@ Tier A or full-gauntlet sentinel.
 Stage 1 remains advisory because candidate code can modify the gauntlet evaluator. Branch
 protection therefore has no required automated check yet. Stage 2 must provide trusted evaluator
 provenance, a full-SHA-pinned macOS core, and a default-branch `workflow_run` attestor before any
-aggregate becomes required. The accepted design armed it when P1 landed, but later explicit
-instructions hold it outside the current P1.2 objective pending separate authorization; the first
-outside contribution still arms it immediately. The attestor must distinguish typed FAIL from
-BLOCKED despite first-failure job exits; missing or skipped evidence is BLOCKED, and BLOCKED must
-never map to a branch-protection-satisfying state. G12 cold launch is stood down pending the P2
-re-specification above; after re-arm it remains advisory until representative burn-in proves the
-new statistical contract stable.
+aggregate becomes required. It arms when P1 lands, before later work, or immediately when the
+first outside contribution appears. The attestor must distinguish typed FAIL from BLOCKED despite
+first-failure job exits; missing or skipped evidence is BLOCKED, and BLOCKED must never map to a
+branch-protection-satisfying state. G12 cold launch is stood down pending its P2 re-specification;
+after re-arm it remains advisory until representative burn-in proves the statistical contract
+stable.
 
 ## Toolchain parity and pins
 

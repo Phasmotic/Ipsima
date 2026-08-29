@@ -221,6 +221,25 @@ class SourceHygieneTests(unittest.TestCase):
         self.write_text("README.md", "documentation\n")
         self.assert_path_fails("scripts/copied_url.py", 'URL = "' + value + '"\n', value)
 
+    def test_g12_ledger_link_is_allowed_only_in_governed_docs(self) -> None:
+        value = network_url(
+            "https",
+            "github.com/markschonfeld/Talaria/issues/2"
+            "#issuecomment-5457754926",
+        )
+        source = f"[ledger]({value})\n"
+
+        for relative in ("docs/BRIEF.md", "docs/GOVERNANCE.md"):
+            findings: list[str] = []
+            hygiene.scan_text(relative, source, findings)
+            self.assertEqual(findings, [])
+
+        findings = []
+        hygiene.scan_text("README.md", source, findings)
+        self.assertEqual(len(findings), 1)
+        self.assertIn("hardcoded non-example host literal", findings[0])
+        self.assertNotIn(value, findings[0])
+
     def test_public_https_allowance_is_value_exact(self) -> None:
         value = network_url("https", "github.com/NousResearch/not-hermes")
         self.assert_path_fails("README.md", "[upstream](" + value + ")\n", value)

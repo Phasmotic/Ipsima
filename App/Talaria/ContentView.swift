@@ -15,13 +15,6 @@ struct ContentView: View {
                 .foregroundStyle(.primary)
         }
         .padding()
-        .overlay(alignment: .topLeading) {
-            // A non-zero UIKit view is required so `draw(_:)`, rather than SwiftUI body
-            // evaluation, establishes the real first-frame boundary.
-            LaunchFirstDrawProbe()
-                .frame(width: 1, height: 1)
-                .allowsHitTesting(false)
-        }
     }
 }
 
