@@ -84,6 +84,7 @@ jobs:
           [ -f "$toolchain_usr/lib/libsourcekitdInProc.so" ]
 
       - name: Run advisory G1–G5
+        id: advisory
         shell: bash
         run: |
           set -euo pipefail
@@ -92,3 +93,19 @@ jobs:
           mapfile -t green_markers < <(grep -Fx 'G1–G5 GREEN' .gauntlet/pr-g1-g5.log)
           [ "${#green_markers[@]}" -eq 1 ]
           ! grep -Eq '^(TIER A GREEN|GAUNTLET GREEN)$' .gauntlet/pr-g1-g5.log
+
+      - name: Retain bounded G2 failure evidence
+        if: ${{ failure() && steps.advisory.outcome == 'failure' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: advisory-g2-diagnostics-attempt-${{ github.run_attempt }}
+          path: |
+            .gauntlet/g2-test-evidence.log
+            .gauntlet/g2-test.log
+            .gauntlet/g2-list.txt
+            .gauntlet/g2-list.stderr
+            .gauntlet/g2-discovery.json
+            .gauntlet/g2-discovery.stderr
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 14

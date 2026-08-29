@@ -6,10 +6,11 @@ being built against the real `tui_gateway` WebSocket JSON-RPC protocol.
 > ## ⚠️ Preview — not usable yet
 >
 > **There is no released or usable app.** The iOS and watchOS targets are placeholder shells.
-> No connection, chat, or approval functionality exists today.
+> The app does not yet expose connection, chat, or approval functionality.
 >
 > What does exist is the foundation: a source-derived protocol contract, a pure-Swift codec, a
-> sanitized capture fixture, and a verification harness. Phase 0 is complete; P1 has not begun.
+> sanitized capture fixture, a tested WebSocket transport foundation, and a verification harness.
+> Phase 0 is complete and P1 is underway.
 >
 > No releases, no TestFlight, no distribution. Watch the repository if you want to know when that
 > changes.
@@ -58,7 +59,7 @@ reviewed contract and its provenance are recorded in [docs/PROTOCOL.md](docs/PRO
 | Phase | Scope | State |
 | --- | --- | --- |
 | P0 | Scaffold, pinned protocol derivation, capture fixture, trustworthy gates | Complete |
-| P1 | HermesKit — transport, models, reconnect/replay, approval state, offline outbox, TLS TOFU trust store, mock gateway | Next after P0 closure |
+| P1 | HermesKit — transport, models, reconnect/replay, approval state, offline outbox, TLS TOFU trust store, mock gateway | In progress — protocol research and WebSocket transport foundations |
 | P2 | Connection and first run — QR pairing, mDNS, Portal OAuth, trust acceptance, Keychain, multi-gateway profiles | Planned |
 | P3 | Chat and approvals — streaming sessions, tool cards, safe approvals, steering, rendering, attachments, localization | Planned |
 | P4 | Notifications, background execution, and system integration | Architecture recorded; code blocked on the operational threat model |
@@ -89,8 +90,8 @@ path is the accepted but unimplemented Stage 2 of
 
 ```
 project.yml            XcodeGen spec — the ONLY source of truth for the Xcode project
-Packages/HermesKit/    Pure-Swift SwiftPM package: Phase-0 codec now; P1 transport, models,
-                       state machines, and mock gateway will live here.
+Packages/HermesKit/    Pure-Swift SwiftPM package: codec, WebSocket transport, and MockGateway;
+                       P1 models, state machines, REST/SSE fallback, and recovery continue here.
                        Zero Apple-only framework imports; builds and tests on Linux.
 App/                   Thin SwiftUI shells: Talaria (iOS), TalariaWidgets, TalariaWatch,
                        TalariaWatchWidgets

@@ -37,10 +37,10 @@ final class WireCodecTests: XCTestCase {
     }
 
     func testIntegerStaysIntegerAcrossRoundTrip() throws {
-        let envelope = try codec.decodeLine(#"{"jsonrpc":"2.0","method":"gateway.ready","params":{"replay_epoch":3}}"#)
-        XCTAssertEqual(envelope.params?["replay_epoch"], .int(3))
+        let envelope = try codec.decodeLine(#"{"jsonrpc":"2.0","method":"integer.probe","params":{"count":3}}"#)
+        XCTAssertEqual(envelope.params?["count"], .int(3))
         let text = try XCTUnwrap(try String(data: codec.encode(envelope), encoding: .utf8))
-        XCTAssertTrue(text.contains(#""replay_epoch":3"#), "int must not widen: \(text)")
+        XCTAssertTrue(text.contains(#""count":3"#), "int must not widen: \(text)")
     }
 
     func testErrorObjectWithUnknownMemberRoundTrips() throws {

@@ -27,9 +27,10 @@ GitHub is the durable project record. Expensive-to-reconstruct findings and any 
 requires owner or orchestrator action must be persisted in the authorized issue or pull request
 before work moves past them. Chat may point to that record but must not become its only copy.
 
-When posting through the owner's GitHub account, begin every public post exactly with
-`Codex here (via Mark's account):` so authorship is unambiguous. Use these coordination states
-exactly when they apply:
+On public repository surfaces—issue comments, pull request bodies, and pull request comments—
+begin every automated contribution exactly with `Codex (automated contributor) —` so automated
+authorship is unambiguous without disclosing an account relationship. Use these coordination
+states exactly when they apply:
 
 - `ACK (coordination)` — instructions received; coordination or a decision is next.
 - `ACK (building)` — authorized implementation is in progress.
@@ -65,16 +66,43 @@ The revised phases are:
 
 ### P1 — HermesKit
 
-P1 retains the codec, WebSocket and REST/SSE transports, domain models, reconnect and replay
-behavior, approval state machine, and `MockGateway`. It also owns two mobile transport
-requirements:
+P1 retains the codec, WebSocket and REST/SSE transports, domain models, reconnect, reattach, and
+best-effort gap recovery, approval state machine, and `MockGateway`. It also owns two mobile
+transport requirements:
 
 - A durable offline outbox queues user messages composed without connectivity and sends them on
-  reconnect. `replay_epoch` recovers a dropped stream; the outbox separately preserves a dropped
-  user intent.
+  reconnect. Best-effort gap recovery is separate from preserving a dropped user intent and
+  follows P1.4 below.
 - A TLS trust store implements trust on first use for self-signed homelab gateways: pin the
   certificate, display its fingerprint, and require explicit acceptance. Plain HTTP is not an
   escape hatch.
+
+#### P1.2 — Transport
+
+P1.2 implements the primary WebSocket transport, including native-provider ticket acquisition
+and the `gateway.ready` handshake, behind the raw `HermesTransport` boundary. The REST/SSE
+fallback follows as the next P1 objective, before event routing and domain models. Its route,
+authentication, listener, readiness, and framing semantics differ from WebSocket; it must gain an
+honest capability or operation seam rather than fabricating JSON-RPC envelopes to look identical.
+
+P1.2 may close with G12 cold launch explicitly stood down for its recorded gate-specification
+defect. Replacement coverage is deferred to P2 and does not expand P1.2. P2 cannot close until G12
+cold launch is re-specified, re-armed, and green.
+
+#### P1.4 — Reconnect, reattach, and best-effort gap recovery
+
+These design rules are binding:
+
+- Transcript reconciliation through `session.history`, or the corresponding
+  `session.resume`/`session.activate` reconciliation path, is authoritative.
+- The replay ring is only an optimisation for transient gaps on a corroborated, reused live
+  session ID. It is never a source of truth.
+- Any ambiguity forces full transcript reconciliation. In particular, `latest_seq: 0` with
+  `truncated: false` is **UNKNOWN**, never proof of “no events”: an absent or evicted ring and a
+  session with no sequenced events are indistinguishable.
+- Sequence numbers alone do not establish continuity. `seq: 1` can recur after process restart
+  or replay-ring eviction; corroborate continuity against authoritative session state before
+  trusting replay.
 
 ### P2 — Connection and first run
 
@@ -222,8 +250,9 @@ This subset is advisory Stage 1 feedback. It is not Tier A, does not evaluate G6
 the correlated Tier B run, cannot close a phase, and is not a required status check. The complete
 two-stage design and its P1-or-outside-contribution arm point are in ADR-0002. Stage 2 must establish
 trusted evaluator provenance and PASS/FAIL/BLOCKED attestation before checks become required;
-BLOCKED can never be represented by a branch-protection-satisfying status. G12 cold launch remains
-advisory after that transition until representative burn-in establishes stability.
+BLOCKED can never be represented by a branch-protection-satisfying status. G12 cold launch is
+stood down pending its P2 re-specification; after re-arm it remains advisory until representative
+burn-in establishes the statistical contract's stability.
 
 ### Tier B — authoritative Apple-platform CI
 
@@ -234,12 +263,30 @@ advisory after that transition until representative burn-in establishes stabilit
 | G9 | watchOS app, watch widget, and watch UI smoke build and pass with zero warnings. |
 | G10 | Accessibility audits of every primary screen have no critical finding. |
 | G11 | The required light/dark, device-size, and Dynamic Type screenshot matrix is uploaded. |
-| G12 | Cold launch and live-stream responsiveness stay within the declared budgets. |
+| G12 | Cold launch is explicitly stood down pending its P2 re-arm; live-stream responsiveness is enforced once that surface arms. |
 | G13 | An unsigned archive succeeds and proves the iOS widget, embedded watch app, and watch widget are present. |
 
-G12 cold launch is armed during audit repair. Its first closure measurement was 3.062 seconds
-against the strict `<3.0s` budget; the single permitted retry passed at 2.863 seconds over five
-samples. The threshold and measurement contract remain unchanged.
+G12 cold launch is **STOOD DOWN — never PASS or N/A** after a gate-specification defect was found.
+The application-launch subject exists, but the former strict mean-under-3.0-second instrument
+cannot reliably fail for the claimed reason: the retained ten-verdict history has median
+3.0482066832 seconds and six failures, while exact-SHA reruns moved by as much as 1.56285685
+seconds. Every historical pass and failure remains a measurement from that defective instrument;
+none remains a certification. The complete sanitized record is linked from
+[public audit issue #2](https://github.com/markschonfeld/Talaria/issues/2#issuecomment-5457754926).
+
+Replacement coverage is **DEFERRED to P2**, to be designed alongside the re-arm when a real app's
+launch cost is worth measuring. P1.2 does not run a paired link study, pre-main timer, binary-size
+ratchet, static-initializer audit, or pre-frame networking assertion.
+
+Before any P2 baseline is collected, the re-arm contract must declare a detection floor (`>= X ms`
+at confidence `Y`), use a pinned known-good reference binary interleaved in the same job on the
+same runner and gate on median delta or ratio, retain at least ten raw per-iteration xcresult values
+per run, and pre-register the derivation formula plus a total false-fail budget no greater than 1%
+per checkpoint including retry. Any absolute component requires at least 30 runner instances over
+at least seven days and must report median, MAD, P95, and maximum. Shifts below the detection floor
+are advisory. The former one-retry clause acted as best-of-two sample selection, and
+`XCTApplicationLaunchMetric` already discards a built-in warm-up iteration; both facts belong in
+the re-armed statistical contract. P2 cannot close while G12 cold launch remains stood down.
 
 By explicit orchestrator ruling, **G12 streaming is
 `N/A (no live stream or streaming UI to measure)`**. The clause has no subject before a real

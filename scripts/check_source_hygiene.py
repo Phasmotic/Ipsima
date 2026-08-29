@@ -70,6 +70,22 @@ def _secure_url(value: str) -> str:
 # Public dependency/documentation URLs are intentional only at these exact paths.
 # An allowed value copied into app code or another script remains a finding.
 PUBLIC_HTTPS_ALLOWANCES = {
+    "docs/BRIEF.md": frozenset(
+        {
+            _secure_url(
+                "github.com/markschonfeld/Talaria/issues/2"
+                "#issuecomment-5457754926"
+            )
+        }
+    ),
+    "docs/GOVERNANCE.md": frozenset(
+        {
+            _secure_url(
+                "github.com/markschonfeld/Talaria/issues/2"
+                "#issuecomment-5457754926"
+            )
+        }
+    ),
     "README.md": frozenset(
         {
             _secure_url("github.com/NousResearch/hermes-agent"),

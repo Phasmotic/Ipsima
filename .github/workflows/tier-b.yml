@@ -20,7 +20,7 @@ env:
 
 jobs:
   ios:
-    name: G7/G8/G10/G12 · iOS simulator
+    name: G7/G8/G10 · iOS simulator
     runs-on: macos-26
     timeout-minutes: 45
     steps:
@@ -41,7 +41,6 @@ jobs:
           python3 -B -m unittest \
             scripts.test_capture_golden \
             scripts.test_check_conformance \
-            scripts.test_check_launch_metrics \
             scripts.test_check_tier_b_run_snapshot \
             scripts.test_check_tier_b_status_log \
             scripts.test_check_xcode_log \
@@ -146,7 +145,7 @@ jobs:
             --expect-count 'TalariaTests/SmokeTests=1' \
             | tee .gauntlet/g8-unit-evidence.log
 
-      - name: UI tests — smoke + accessibility audit + launch metric (G8/G10/G12)
+      - name: UI tests — smoke + accessibility audit (G8/G10)
         run: |
           set -euo pipefail
           xcodebuild test \
@@ -163,115 +162,18 @@ jobs:
             --xcresult .gauntlet/ui.xcresult \
             --expect 'TalariaUITests/SmokeUITests/testLaunchShowsShell()' \
             --expect 'TalariaUITests/AccessibilityAuditUITests/testRootScreenPassesAccessibilityAudit()' \
-            --expect 'TalariaUITests/LaunchPerformanceUITests/testLaunchMetricBaselineRecorded()' \
             --expect-count 'TalariaUITests/SmokeUITests=1' \
             --expect-count 'TalariaUITests/AccessibilityAuditUITests=1' \
-            --expect-count 'TalariaUITests/LaunchPerformanceUITests=1' \
             | tee .gauntlet/g8-ui-evidence.log
 
-      - name: Verify G12 cold-launch budget
+      # The launch subject exists, but the former absolute wall-clock threshold
+      # cannot distinguish product regressions from runner/fresh-simulator noise.
+      # Replacement coverage is deliberately deferred to the P2 re-arm design.
+      - name: G12 cold launch — STOOD DOWN (gate-specification defect)
         run: |
-          set -euo pipefail
-          g12_blocked() {
-            echo "G12 COLD-LAUNCH BLOCKED — $1" >&2
-            exit 2
-          }
-          G12_TEST_ID='test://com.apple.xcode/Talaria/TalariaUITests/LaunchPerformanceUITests/testLaunchMetricBaselineRecorded'
-          if ! xcrun xcresulttool version \
-            >.gauntlet/g12-xcresulttool-version.txt \
-            2>.gauntlet/g12-xcresulttool-version.stderr; then
-            g12_blocked "xcresulttool could not report its version"
-          fi
-          test -s .gauntlet/g12-xcresulttool-version.txt \
-            || g12_blocked "xcresulttool version evidence is empty"
-          test ! -s .gauntlet/g12-xcresulttool-version.stderr \
-            || g12_blocked "xcresulttool version emitted stderr"
-          if ! xcrun xcresulttool get test-results metrics \
-            --schema \
-            --schema-version 0.1.0 \
-            --path .gauntlet/ui.xcresult \
-            --compact \
-            >.gauntlet/g12-metrics-schema.json \
-            2>.gauntlet/g12-metrics-schema.stderr; then
-            g12_blocked "metrics-schema export failed"
-          fi
-          test -s .gauntlet/g12-metrics-schema.json \
-            || g12_blocked "metrics-schema export is empty"
-          test ! -s .gauntlet/g12-metrics-schema.stderr \
-            || g12_blocked "metrics-schema export emitted stderr"
-          if ! shasum -a 256 .gauntlet/g12-metrics-schema.json \
-            >.gauntlet/g12-metrics-schema.sha256 \
-            2>.gauntlet/g12-metrics-schema-shasum.stderr; then
-            g12_blocked "metrics-schema digest could not be computed"
-          fi
-          test -s .gauntlet/g12-metrics-schema.sha256 \
-            || g12_blocked "metrics-schema digest evidence is empty"
-          test ! -s .gauntlet/g12-metrics-schema-shasum.stderr \
-            || g12_blocked "metrics-schema digest emitted stderr"
-          if ! G12_SCHEMA_DIGEST="$(awk '{print $1}' .gauntlet/g12-metrics-schema.sha256)"; then
-            g12_blocked "metrics-schema digest evidence could not be parsed"
-          fi
-          [ "$G12_SCHEMA_DIGEST" = '55401dc6d98f6f89f82e05c971c3a29b8511a698d962af5a04c684c6fe46d8bf' ] \
-            || g12_blocked "metrics-schema digest does not match the reviewed pin"
-          echo "G12 schema SHA-256: $G12_SCHEMA_DIGEST"
-          if ! xcrun xcresulttool get test-results metrics \
-            --schema-version 0.1.0 \
-            --path .gauntlet/ui.xcresult \
-            --test-id "$G12_TEST_ID" \
-            --compact \
-            >.gauntlet/g12-metrics.json \
-            2>.gauntlet/g12-metrics.stderr; then
-            g12_blocked "metrics export failed"
-          fi
-          test -s .gauntlet/g12-metrics.json \
-            || g12_blocked "metrics export is empty"
-          test ! -s .gauntlet/g12-metrics.stderr \
-            || g12_blocked "metrics export emitted stderr"
-          if python3 -B scripts/check_launch_metrics.py \
-            --schema-json .gauntlet/g12-metrics-schema.json \
-            --metrics-json .gauntlet/g12-metrics.json \
-            >.gauntlet/g12-evidence.log 2>&1; then
-            G12_CHECKER_RC=0
-          else
-            G12_CHECKER_RC=$?
-          fi
-          test -s .gauntlet/g12-evidence.log \
-            || g12_blocked "checker verdict evidence is empty"
-          if ! G12_CHECKER_MARKER="$(awk 'NF { marker=$0 } END { print marker }' .gauntlet/g12-evidence.log)"; then
-            g12_blocked "checker verdict marker could not be parsed"
-          fi
-          case "$G12_CHECKER_RC" in
-            0)
-              case "$G12_CHECKER_MARKER" in
-                'G12 COLD-LAUNCH PASS: '*)
-                  cat .gauntlet/g12-evidence.log \
-                    || g12_blocked "checker PASS evidence could not be emitted"
-                  ;;
-                *) g12_blocked "checker status and PASS marker disagree" ;;
-              esac
-              ;;
-            1)
-              case "$G12_CHECKER_MARKER" in
-                'G12 COLD-LAUNCH FAIL: '*)
-                  cat .gauntlet/g12-evidence.log >&2 \
-                    || g12_blocked "checker FAIL evidence could not be emitted"
-                  exit 1
-                  ;;
-                *) g12_blocked "checker status and FAIL marker disagree" ;;
-              esac
-              ;;
-            2)
-              case "$G12_CHECKER_MARKER" in
-                'G12 COLD-LAUNCH BLOCKED: '*)
-                  cat .gauntlet/g12-evidence.log >&2 \
-                    || g12_blocked "checker BLOCKED evidence could not be emitted"
-                  exit 2
-                  ;;
-                *) g12_blocked "checker status and BLOCKED marker disagree" ;;
-              esac
-              ;;
-            *) g12_blocked "checker returned an unsupported status" ;;
-          esac
+          status="G12 cold launch — STOOD DOWN (gate-specification defect; never PASS or N/A); replacement coverage deferred to P2 and P2 cannot close before re-arm"
+          printf '%s\n' "$status" | tee .gauntlet/g12-cold-launch-status.txt
+          printf '### %s\n' "$status" >> "$GITHUB_STEP_SUMMARY"
 
       - name: G11 — N/A (no real streaming chat surface to capture)
         run: |
@@ -286,7 +188,7 @@ jobs:
             | tee .gauntlet/g4-swiftlint-install.log
 
       # G4 runs last during audit repair so a real lint red remains decisive
-      # without hiding G6-G12 diagnostic evidence earlier in this job.
+      # without hiding earlier G6-G10 diagnostic evidence in this job.
       - name: Verify formatter parity and lint (G4, authoritative)
         run: |
           set -euo pipefail

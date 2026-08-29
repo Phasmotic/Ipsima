@@ -18,4 +18,4 @@ jobs:
     name: Advisory G1–G5
     permissions:
       contents: read
-    uses: markschonfeld/Talaria/.github/workflows/linux-g1-g5-core.yml@f4b29749c8765249c82f7fbdf156229a371a4d61
+    uses: markschonfeld/Talaria/.github/workflows/linux-g1-g5-core.yml@24c7c2f985b9be1f25edc00dd42c9f7584fd1acc

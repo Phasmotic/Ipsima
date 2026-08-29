@@ -95,8 +95,9 @@ The attestor publishes stable aggregate contexts with these semantics:
 
 After deliberate inversion canaries prove those mappings and representative runs establish
 stability, the Linux G1–G5 aggregate and deterministic Tier B aggregate become required checks on
-`main`. Individual shards remain diagnostic. G12 cold launch stays advisory even then until a
-representative burn-in proves its retry contract stable. G11, G12 streaming, and G14 retain their
+`main`. Individual shards remain diagnostic. G12 cold launch is stood down pending its P2
+re-specification; after re-arm it stays advisory until representative burn-in proves the
+statistical contract stable. G11, G12 streaming, and G14 retain their
 governed N/A state until their real streaming-surface arm point; applicability is named and never
 reported as PASS.
 

@@ -61,6 +61,25 @@ gate is not armed; it is never represented as passing. Every green sentinel repo
 every N/A gate by name and reason so a reader cannot mistake applicability for successful
 execution.
 
+A gate's subject is frozen when the gate is created. A red gate cannot be made inapplicable by a
+later subject-narrowing argument. N/A requires demonstrated absence of the subject; excessive
+measurement noise is instead a defective-instrument finding. A gate may be stood down only after a
+recorded specification defect identifies the root cause and a mandatory re-arm condition. Stood
+down is never PASS or N/A. An objective may close with a stood-down gate only when the status,
+root cause, and re-arm obligation are explicit and that objective is not the phase whose closure
+requires re-arm. G12 cold launch therefore does not block P1.2, but P2 cannot close before it is
+re-specified, re-armed, and green.
+
+Any gate-status ruling made while that gate is red and its result blocks the ruling authority's
+own progress requires independent review before it takes effect. G12's superseding
+gate-specification ruling was ratified by five independent reviews and is the worked example: the
+launch subject existed, but the absolute wall-clock threshold sat inside its instrument's noise.
+Calling the subject absent would have weakened the gate by relabeling it.
+
+Measurement hygiene must be outcome-independent. A uniform warmup applied identically to every
+run is permitted. No measurement-protocol change may be made while red to turn that red green;
+selective warming is one instance of that prohibited outcome-dependent intervention.
+
 Phase activation is not a deferral. G11 is `N/A (no real streaming chat surface to capture)`;
 G14 is `N/A (no G11 images to review before that arm point)`; and, by explicit orchestrator
 ruling, G12 streaming is `N/A (no live stream or streaming UI to measure)`. None is passing,
@@ -76,11 +95,54 @@ remains. A synthetic streaming harness is prohibited before a real streaming cha
 measuring codec work without a real streaming UI would not test G12's main-thread responsiveness
 contract.
 
+### G12 cold-launch specification defect and P2 re-arm
+
+G12's former strict mean-under-3.0-second `XCTApplicationLaunchMetric` rule is stood down as a
+gate-specification defect and the ninth hollow-gate-family finding. It measured a real application
+launch, but its threshold could
+not reliably distinguish a product regression from runner and fresh-simulator effects. The prior
+claims that the threshold lay inside the noise band and that no launch subject existed were
+mutually corrosive: the first requires a real measured quantity, while the second denies one. The
+data support the first claim, so the “no subject” rationale is retracted.
+
+The retained ten-verdict history has median 3.0482066832 seconds and six failures; the complete
+twelve-measurement record restores two successful exact-SHA retries. All historical passes and
+failures remain valid measurements from a defectively specified instrument, and none remains a
+certification. The complete sanitized dataset and conflict-of-interest note are recorded in
+[public audit issue #2](https://github.com/markschonfeld/Talaria/issues/2#issuecomment-5457754926).
+
+Replacement coverage is deferred to P2, to be designed alongside the re-arm when a real app's
+launch cost is a useful product property. No paired link study, pre-main timer, binary-size
+ratchet, static-initializer audit, or pre-frame networking assertion is an armed gate during P1.2.
+
+G12 cold launch must be re-specified and re-armed in P2, and P2 cannot close while it remains stood
+down. Before collecting any baseline, the new contract must:
+
+- declare a detection floor of at least X milliseconds at confidence Y, routing smaller shifts to
+  an advisory channel;
+- use a pinned known-good reference binary interleaved in the same job on the same runner, with
+  median delta or ratio as the primary criterion;
+- read and retain every raw value from at least ten measured iterations per run, never a mean of
+  five;
+- pre-register its derivation formula and a total false-fail budget no greater than 1% per
+  checkpoint, including retry; and
+- require any absolute component to use at least 30 runner instances over at least seven days and
+  report median, MAD, P95, and maximum.
+
+The earlier one-retry clause functioned as best-of-two sample discarding and must be incorporated
+into that typed statistical contract. `XCTApplicationLaunchMetric` also discards a warm-up
+iteration by platform design, so the former “cold launch” label was not literal.
+
 ## Capture and publication safety
 
 Talaria is a public repository. A value that enters a tracked fixture, commit, pull request,
 issue, or other public artifact must therefore be safe for permanent disclosure; later deletion
 does not undo publication.
+
+Every automated contribution to a public issue comment, pull request body, or pull request
+comment in this repository begins exactly with `Codex (automated contributor) —`. The prefix
+identifies automated authorship without publishing any relationship to the account used to post
+it. Existing public history is not rewritten when this protocol changes.
 
 ### Golden-capture boundary
 
@@ -175,8 +237,9 @@ provenance, a full-SHA-pinned macOS core, and a default-branch `workflow_run` at
 aggregate becomes required. It arms when P1 lands, before later work, or immediately when the
 first outside contribution appears. The attestor must distinguish typed FAIL from BLOCKED despite
 first-failure job exits; missing or skipped evidence is BLOCKED, and BLOCKED must never map to a
-branch-protection-satisfying state. G12 cold launch remains advisory after Stage 2 until
-representative burn-in proves its retry contract stable.
+branch-protection-satisfying state. G12 cold launch is stood down pending its P2 re-specification;
+after re-arm it remains advisory until representative burn-in proves the statistical contract
+stable.
 
 ## Toolchain parity and pins
 
