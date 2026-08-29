@@ -20,7 +20,7 @@ else:  # direct execution from the scripts directory
 
 PAIR_COUNT = 10
 VARIANTS = ("control", "linked")
-ANALYSIS_SCHEMA_VERSION = 1
+ANALYSIS_SCHEMA_VERSION = 2
 LAUNCH_LINK_SYMBOL = "_talaria_" + "launch_link_anchor"
 TRANSPORT_FACTORY_SYMBOL = "_talaria_" + "transport_factory_link_anchor"
 MEASUREMENT_EVIDENCE_INVALID = "measurement_" + "evidence_invalid"
@@ -53,6 +53,11 @@ SEMANTIC_SYMBOL_SPECS = {
         ("in conformance HermesKit.URLSessionWebSocketConnector",),
     ),
 }
+LINK_MATCH_COUNT_NAMES = (
+    "launch_anchor",
+    "transport_factory_anchor",
+    *SEMANTIC_SYMBOL_SPECS,
+)
 LINK_COLLECTION_BLOCKER_CODES = frozenset(
     f"{variant}_{stage}"
     for variant in VARIANTS
@@ -237,25 +242,27 @@ def summarize_link_symbols(
 
     control = _parse_symbol_names(control_raw, "control symbol evidence")
     linked = _parse_symbol_names(linked_raw, "linked symbol evidence")
-    checks = {
-        "control_has_one_launch_anchor": control.count(LAUNCH_LINK_SYMBOL) == 1,
-        "linked_has_one_launch_anchor": linked.count(LAUNCH_LINK_SYMBOL) == 1,
-        "control_omits_transport_factory_anchor": (
-            control.count(TRANSPORT_FACTORY_SYMBOL) == 0
-        ),
-        "linked_has_one_transport_factory_anchor": (
-            linked.count(TRANSPORT_FACTORY_SYMBOL) == 1
-        ),
+    match_counts = {
+        "launch_anchor": {
+            "control": control.count(LAUNCH_LINK_SYMBOL),
+            "linked": linked.count(LAUNCH_LINK_SYMBOL),
+        },
+        "transport_factory_anchor": {
+            "control": control.count(TRANSPORT_FACTORY_SYMBOL),
+            "linked": linked.count(TRANSPORT_FACTORY_SYMBOL),
+        },
     }
     for name, (prefix, tokens) in SEMANTIC_SYMBOL_SPECS.items():
-        checks[name] = (
-            _semantic_symbol_count(control, prefix, tokens) == 0
-            and _semantic_symbol_count(linked, prefix, tokens) == 1
-        )
+        match_counts[name] = {
+            "control": _semantic_symbol_count(control, prefix, tokens),
+            "linked": _semantic_symbol_count(linked, prefix, tokens),
+        }
+    checks = _link_checks_from_match_counts(match_counts)
     verified = all(checks.values())
     return {
         "status": "verified" if verified else "blocked",
         "checks": checks,
+        "match_counts": match_counts,
         "control_symbol_count": len(control),
         "linked_symbol_count": len(linked),
         "blocker_code": None if verified else "link_contrast_not_established",
@@ -416,6 +423,7 @@ def _blocked_link_contrast(
     return {
         "status": "blocked",
         "checks": {name: None for name in LINK_CHECK_NAMES},
+        "match_counts": None,
         "control_symbol_count": None,
         "linked_symbol_count": None,
         "blocker_code": blocker_code or LINK_SYMBOL_EVIDENCE_INVALID,
@@ -640,6 +648,53 @@ def _validate_measurements(value: object) -> str:
     return status
 
 
+def _validate_link_match_counts(
+    value: object,
+    control_symbol_count: int,
+    linked_symbol_count: int,
+) -> dict[str, dict[str, int]]:
+    raw_counts = _exact_object(
+        value, frozenset(LINK_MATCH_COUNT_NAMES), "link match counts"
+    )
+    counts: dict[str, dict[str, int]] = {}
+    for name in LINK_MATCH_COUNT_NAMES:
+        variants = _exact_object(
+            raw_counts[name], frozenset(VARIANTS), f"{name} match counts"
+        )
+        control = _integer(variants["control"], f"{name} control match count")
+        linked = _integer(variants["linked"], f"{name} linked match count")
+        if control > control_symbol_count or linked > linked_symbol_count:
+            raise AnalysisBlocked(f"{name} match count exceeds symbol inventory")
+        counts[name] = {"control": control, "linked": linked}
+    for variant, symbol_count in (
+        ("control", control_symbol_count),
+        ("linked", linked_symbol_count),
+    ):
+        if symbol_count < 1:
+            raise AnalysisBlocked(f"{variant} symbol inventory is empty")
+        if sum(counts[name][variant] for name in LINK_MATCH_COUNT_NAMES) > symbol_count:
+            raise AnalysisBlocked(f"{variant} match counts exceed symbol inventory")
+    return counts
+
+
+def _link_checks_from_match_counts(
+    counts: dict[str, dict[str, int]],
+) -> dict[str, bool]:
+    checks = {
+        "control_has_one_launch_anchor": counts["launch_anchor"]["control"] == 1,
+        "linked_has_one_launch_anchor": counts["launch_anchor"]["linked"] == 1,
+        "control_omits_transport_factory_anchor": (
+            counts["transport_factory_anchor"]["control"] == 0
+        ),
+        "linked_has_one_transport_factory_anchor": (
+            counts["transport_factory_anchor"]["linked"] == 1
+        ),
+    }
+    for name in SEMANTIC_SYMBOL_SPECS:
+        checks[name] = counts[name]["control"] == 0 and counts[name]["linked"] == 1
+    return checks
+
+
 def _validate_link_contrast(value: object) -> str:
     contrast = _exact_object(
         value,
@@ -647,6 +702,7 @@ def _validate_link_contrast(value: object) -> str:
             {
                 "status",
                 "checks",
+                "match_counts",
                 "control_symbol_count",
                 "linked_symbol_count",
                 "blocker_code",
@@ -659,11 +715,21 @@ def _validate_link_contrast(value: object) -> str:
     )
     status = contrast["status"]
     if status == "verified":
+        control_symbol_count = _integer(
+            contrast["control_symbol_count"], "control symbol count"
+        )
+        linked_symbol_count = _integer(
+            contrast["linked_symbol_count"], "linked symbol count"
+        )
+        match_counts = _validate_link_match_counts(
+            contrast["match_counts"], control_symbol_count, linked_symbol_count
+        )
         if (
             contrast["blocker_code"] is not None
             or not all(result is True for result in checks.values())
-            or _integer(contrast["control_symbol_count"], "control symbol count") < 1
-            or _integer(contrast["linked_symbol_count"], "linked symbol count") < 1
+            or checks != _link_checks_from_match_counts(match_counts)
+            or control_symbol_count < 1
+            or linked_symbol_count < 1
         ):
             raise AnalysisBlocked("verified link evidence is contradictory")
         return status
@@ -678,6 +744,7 @@ def _validate_link_contrast(value: object) -> str:
     }:
         if (
             not all(result is None for result in checks.values())
+            or contrast["match_counts"] is not None
             or contrast["control_symbol_count"] is not None
             or contrast["linked_symbol_count"] is not None
         ):
@@ -686,10 +753,17 @@ def _validate_link_contrast(value: object) -> str:
     if blocker_code == "link_contrast_not_established":
         if any(not isinstance(result, bool) for result in checks.values()):
             raise AnalysisBlocked("link contrast checks are ambiguous")
-        if all(checks.values()):
-            raise AnalysisBlocked("blocked link contrast contains no failed check")
-        _integer(contrast["control_symbol_count"], "control symbol count")
-        _integer(contrast["linked_symbol_count"], "linked symbol count")
+        control_symbol_count = _integer(
+            contrast["control_symbol_count"], "control symbol count"
+        )
+        linked_symbol_count = _integer(
+            contrast["linked_symbol_count"], "linked symbol count"
+        )
+        match_counts = _validate_link_match_counts(
+            contrast["match_counts"], control_symbol_count, linked_symbol_count
+        )
+        if all(checks.values()) or checks != _link_checks_from_match_counts(match_counts):
+            raise AnalysisBlocked("blocked link contrast checks are contradictory")
         return status
     raise AnalysisBlocked("link blocker code is unsupported")
 

@@ -127,7 +127,9 @@ transport initializer, and the three production adapter witnesses before any of 
 interleaved launches run. The semantic preflight has its own render, ordinary-success upload, and
 enforce sequence: build, inventory, demangling, or contrast failure is retained as a sanitized,
 typed `blocked` artifact before the enforcer stops the observations. Raw inventories are never
-uploaded.
+uploaded. The artifact retains only fixed per-variant match counts for the required anchors,
+initializer, and witnesses, so an absent linked symbol is distinguishable from a symbol already
+present in both variants without disclosing an open-ended symbol record.
 
 The full A/B analysis uses the same separate render and enforce pattern. Render returning zero
 means only that a strict, sanitized `observed` or `blocked` artifact was serialized. The

@@ -233,11 +233,41 @@ class LinkSymbolTests(unittest.TestCase):
         result = analyzer.verify_link_symbols(control, linked)
         self.assertEqual(result["status"], "verified")
         self.assertEqual(set(result["checks"].values()), {True})  # type: ignore[union-attr]
+        match_counts = result["match_counts"]
+        self.assertIsInstance(match_counts, dict)
+        for name in analyzer.LINK_MATCH_COUNT_NAMES:
+            expected_control = 1 if name == "launch_anchor" else 0
+            self.assertEqual(match_counts[name]["control"], expected_control)  # type: ignore[index]
+            self.assertEqual(match_counts[name]["linked"], 1)  # type: ignore[index]
+
+    def test_present_in_both_variants_is_distinct_from_missing_in_linked(self) -> None:
+        control, linked = self.valid_symbols()
+        semantic_lines = [
+            line
+            for line in linked.splitlines(keepends=True)
+            if any(
+                line.decode("utf-8").startswith(prefix)
+                and all(token in line.decode("utf-8") for token in tokens)
+                for prefix, tokens in analyzer.SEMANTIC_SYMBOL_SPECS.values()
+            )
+        ]
+        result = analyzer.summarize_link_symbols(control + b"".join(semantic_lines), linked)
+
+        self.assertEqual(result["status"], "blocked")
+        match_counts = result["match_counts"]
+        for name in analyzer.SEMANTIC_SYMBOL_SPECS:
+            self.assertEqual(match_counts[name], {"control": 1, "linked": 1})  # type: ignore[index]
+            self.assertFalse(result["checks"][name])  # type: ignore[index]
 
     def test_each_required_linked_semantic_symbol_blocks_independently(self) -> None:
         control, linked = self.valid_symbols()
         for check_name, (prefix, _) in analyzer.SEMANTIC_SYMBOL_SPECS.items():
             mutated = linked.replace(prefix.encode("utf-8"), b"missing", 1)
+            result = analyzer.summarize_link_symbols(control, mutated)
+            self.assertEqual(
+                result["match_counts"][check_name],  # type: ignore[index]
+                {"control": 0, "linked": 0},
+            )
             with self.subTest(check=check_name), self.assertRaises(
                 analyzer.AnalysisBlocked
             ):
@@ -257,8 +287,47 @@ class LinkSymbolTests(unittest.TestCase):
         ]
         for line in transport_lines:
             mutated = control + line.encode("utf-8") + b"\n"
+            result = analyzer.summarize_link_symbols(mutated, linked)
+            if line == analyzer.TRANSPORT_FACTORY_SYMBOL:
+                count_name = analyzer.LINK_MATCH_COUNT_NAMES[1]
+            else:
+                count_name = next(
+                    name
+                    for name, (prefix, tokens) in analyzer.SEMANTIC_SYMBOL_SPECS.items()
+                    if line.startswith(prefix) and all(token in line for token in tokens)
+                )
+            self.assertEqual(
+                result["match_counts"][count_name],  # type: ignore[index]
+                {"control": 1, "linked": 1},
+            )
             with self.subTest(line=line), self.assertRaises(analyzer.AnalysisBlocked):
                 analyzer.verify_link_symbols(mutated, linked)
+
+    def test_duplicate_primary_match_is_reported_as_ambiguous(self) -> None:
+        control, linked = self.valid_symbols()
+        linked_lines = linked.decode("utf-8").splitlines()
+        primary_lines = {
+            "launch_anchor": analyzer.LAUNCH_LINK_SYMBOL,
+            "transport_factory_anchor": analyzer.TRANSPORT_FACTORY_SYMBOL,
+        }
+        for name, (prefix, tokens) in analyzer.SEMANTIC_SYMBOL_SPECS.items():
+            primary_lines[name] = next(
+                line
+                for line in linked_lines
+                if line.startswith(prefix) and all(token in line for token in tokens)
+            )
+        for name, line in primary_lines.items():
+            mutated = linked + line.encode("utf-8") + b"\n"
+            result = analyzer.summarize_link_symbols(control, mutated)
+            with self.subTest(name=name):
+                self.assertEqual(
+                    result["match_counts"][name],  # type: ignore[index]
+                    {
+                        "control": 1 if name == "launch_anchor" else 0,
+                        "linked": 2,
+                    },
+                )
+                self.assertEqual(result["status"], "blocked")
 
     def test_c_marker_substring_does_not_count(self) -> None:
         control, linked = self.valid_symbols()
@@ -522,6 +591,7 @@ class CommandLineTests(unittest.TestCase):
             "control_symbol_inventory_failed",
         )
         self.assertEqual(set(document["link_contrast"]["checks"].values()), {None})
+        self.assertIsNone(document["link_contrast"]["match_counts"])
 
     def test_observation_failure_is_sanitized_before_enforcement(self) -> None:
         with TemporaryDirectory() as directory:
@@ -569,6 +639,10 @@ class CommandLineTests(unittest.TestCase):
         self.assertEqual(parsed["status"], "observed")
         self.assertEqual(parsed["link_contrast"]["status"], "verified")
         self.assertEqual(set(parsed["link_contrast"]["checks"].values()), {True})
+        self.assertEqual(
+            parsed["link_contrast"]["match_counts"]["transport_factory_anchor"],
+            {"control": 0, "linked": 1},
+        )
         pairs = parsed["measurements"]["pairs"]
         self.assertEqual(len(pairs), 10)
         self.assertEqual(pairs[0]["control_seconds"], "2.0")
@@ -625,13 +699,29 @@ class CommandLineTests(unittest.TestCase):
         self.assertIn("G12 LINK A/B BLOCKED:", enforce_stderr)
 
     def test_tampered_or_unknown_analysis_evidence_blocks_enforcement(self) -> None:
-        for mutation in ("root_status", "nested_status", "check_type", "unknown_key"):
+        for mutation in (
+            "old_schema",
+            "root_status",
+            "nested_status",
+            "check_type",
+            "match_count",
+            "missing_match_name",
+            "extra_variant",
+            "negative_count",
+            "boolean_count",
+            "count_exceeds_inventory",
+            "disjoint_sum_exceeds_inventory",
+            "zero_inventories",
+            "unknown_key",
+        ):
             with TemporaryDirectory() as directory:
                 paths = write_valid_fixture(Path(directory))
                 status, _, _ = self.run_main(paths)
                 self.assertEqual(status, 0)
                 document = json.loads(paths["output"].read_text(encoding="utf-8"))
-                if mutation == "root_status":
+                if mutation == "old_schema":
+                    document["schema_version"] = 1
+                elif mutation == "root_status":
                     document["status"] = "blocked"
                 elif mutation == "nested_status":
                     document["link_contrast"]["status"] = "blocked"
@@ -639,6 +729,50 @@ class CommandLineTests(unittest.TestCase):
                     document["link_contrast"]["checks"][
                         "control_has_one_launch_anchor"
                     ] = []
+                elif mutation == "match_count":
+                    document["link_contrast"]["match_counts"][
+                        "transport_initializer_control_absent_linked_present"
+                    ]["linked"] = 0
+                elif mutation == "missing_match_name":
+                    del document["link_contrast"]["match_counts"]["launch_anchor"]
+                elif mutation == "extra_variant":
+                    document["link_contrast"]["match_counts"]["launch_anchor"][
+                        "unexpected"
+                    ] = 0
+                elif mutation == "negative_count":
+                    document["link_contrast"]["match_counts"]["launch_anchor"][
+                        "control"
+                    ] = -1
+                elif mutation == "boolean_count":
+                    document["link_contrast"]["match_counts"]["launch_anchor"][
+                        "control"
+                    ] = True
+                elif mutation == "count_exceeds_inventory":
+                    document["link_contrast"]["match_counts"]["launch_anchor"][
+                        "control"
+                    ] = document["link_contrast"]["control_symbol_count"] + 1
+                elif mutation == "disjoint_sum_exceeds_inventory":
+                    document["link_contrast"]["linked_symbol_count"] = 1
+                elif mutation == "zero_inventories":
+                    document["status"] = "blocked"
+                    contrast = document["link_contrast"]
+                    contrast["status"] = "blocked"
+                    contrast["blocker_code"] = "link_contrast_not_established"
+                    contrast["control_symbol_count"] = 0
+                    contrast["linked_symbol_count"] = 0
+                    for counts in contrast["match_counts"].values():
+                        counts["control"] = 0
+                        counts["linked"] = 0
+                    contrast["checks"] = {
+                        "control_has_one_launch_anchor": False,
+                        "linked_has_one_launch_anchor": False,
+                        "control_omits_transport_factory_anchor": True,
+                        "linked_has_one_transport_factory_anchor": False,
+                        "transport_initializer_control_absent_linked_present": False,
+                        "http_loader_witness_control_absent_linked_present": False,
+                        "ticket_acquirer_witness_control_absent_linked_present": False,
+                        "websocket_connector_witness_control_absent_linked_present": False,
+                    }
                 else:
                     document["unexpected"] = True
                 paths["output"].write_text(
