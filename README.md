@@ -88,7 +88,7 @@ owner to file, not a claim of Nous Research endorsement.
 Every upstream-facing claim was re-derived and re-verified against Hermes HEAD
 `26350357d76e4508c8df9304a3374bdc5a6f6220` on 2026-08-30, not against the pinned commit this
 repository builds on: 8 claims were dropped as stale and 2 were withdrawn as our own errors. What
-remains is five documentation and comment corrections across 8 files, +32/−18, with no behaviour,
+remains is five documentation and comment corrections across 8 files, +31/−17, with no behaviour,
 API, or test change.
 
 No further Ipsima client development is planned. The gate policy in

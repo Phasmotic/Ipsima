@@ -114,7 +114,7 @@ Documentation:
 - `website/docs/user-guide/features/hooks.md` — corrects the replay-protection guidance; adds the
   `pre_approval_request` reconciliation caveat
 
-8 files, +32/−18, no executable line changed.
+8 files, +31/−17, no executable line changed.
 
 ## How to Test
 
