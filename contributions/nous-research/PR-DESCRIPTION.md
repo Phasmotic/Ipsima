@@ -24,8 +24,12 @@ description. Verified against `26350357d76e4508c8df9304a3374bdc5a6f6220`.
 JSON-RPC in both directions... No framing differences", and `web/src/lib/gatewayClient.ts:4-7`
 repeats it. In fact each WebSocket text message carries exactly one JSON-RPC object
 (`tui_gateway/ws.py:141-145,236-260,420-443`); newline framing is the stdio path only
-(`tui_gateway/entry.py:486-502`). A client that splits inbound WebSocket messages on newlines, as
-the comments instruct, will misparse. The JSON-RPC *schema* is shared; the *framing* is not. Also
+(`tui_gateway/entry.py:486-502`). A client that follows the comments gets no warning and two
+failure modes: framing inbound by delimiter — buffering until a newline, the standard NDJSON reader
+idiom — stalls forever, because the server appends no terminator (`tui_gateway/ws.py:145,247,260`);
+and joining outbound requests with newlines into a single text message returns `-32700`, because
+the server calls `json.loads` on the whole message (`tui_gateway/ws.py:435-443`). The JSON-RPC
+*schema* is shared; the *framing* is not. Also
 adds one clarifying line to `website/docs/developer-guide/programmatic-integration.md`, which
 mentions both transports without distinguishing their framing.
 
@@ -34,8 +38,9 @@ mentions both transports without distinguishing their framing.
 `tool.progress` producer anywhere in `tui_gateway/`. The gateway emits `tool.generating`
 (`tui_gateway/server.py:8082`) and `tool.output_risk` (`tui_gateway/server.py:7854`), both
 conditional. The name is not fictional — the separate REST/SSE API does emit
-`hermes.tool.progress` (`gateway/platforms/api_server.py:4828,5213,5449,5455`) — so the list
-appears to have crossed the two surfaces. The patch corrects the list and states the distinction
+`tool.progress` (`gateway/platforms/api_server.py:4826-4830,4961`) and `hermes.tool.progress`
+(`gateway/platforms/api_server.py:5213,5449,5455`) — so the list appears to have crossed the two
+surfaces. The patch corrects the list and states the distinction
 explicitly rather than deleting the name. Consumers that accept `tool.progress` for compatibility
 are left untouched.
 
@@ -56,7 +61,7 @@ A consumer cannot call `approval.respond` from the webhook payload alone. The pa
 treating it as a notification and calling `approval.pending` for the authoritative record first.
 
 **5. "Lossless" and "seamless" replay wording overstates a bounded ring.**
-Comments in `apps/shared/src/json-rpc-gateway.ts:108`, `tui_gateway/event_replay.py:3-8`, and
+Comments in `apps/shared/src/json-rpc-gateway.ts:111`, `tui_gateway/event_replay.py:3-8`, and
 `tui_gateway/server.py:2489-2495` describe reconnect replay as lossless or seamless. The ring is
 bounded at 512 events per session across at most 64 remembered sessions, with FIFO session
 eviction, and is reset by restart

@@ -91,7 +91,8 @@ accepted Stage 2 trusted-attestation design in
 ```
 project.yml            XcodeGen spec — the ONLY source of truth for the Xcode project
 Packages/HermesKit/    Pure-Swift SwiftPM package: codec, WebSocket transport, and MockGateway;
-                       P1 models, state machines, REST/SSE fallback, and recovery continue here.
+                       P1 models, state machines, REST/SSE fallback, and recovery were planned
+                       here and never built.
                        Zero Apple-only framework imports; builds and tests on Linux.
 App/                   Thin SwiftUI shells: Talaria (iOS), TalariaWidgets, TalariaWatch,
                        TalariaWatchWidgets
