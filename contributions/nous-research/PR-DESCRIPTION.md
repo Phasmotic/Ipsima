@@ -1,7 +1,7 @@
 # Draft upstream PR body
 
 Prepared text for a pull request against `NousResearch/hermes-agent` carrying
-`documentation-corrections.patch`. Internal claim IDs and Talaria bookkeeping are deliberately
+`documentation-corrections.patch`. Internal claim IDs and Ipsima bookkeeping are deliberately
 absent; `HEAD-REVERIFICATION.md` is the evidence base if a maintainer asks for it.
 
 ---

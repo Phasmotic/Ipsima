@@ -73,7 +73,7 @@ PUBLIC_HTTPS_ALLOWANCES = {
     "docs/BRIEF.md": frozenset(
         {
             _secure_url(
-                "github.com/Phasmotic/Talaria/issues/2"
+                "github.com/Phasmotic/Ipsima/issues/2"
                 "#issuecomment-5457754926"
             )
         }
@@ -81,7 +81,7 @@ PUBLIC_HTTPS_ALLOWANCES = {
     "docs/GOVERNANCE.md": frozenset(
         {
             _secure_url(
-                "github.com/Phasmotic/Talaria/issues/2"
+                "github.com/Phasmotic/Ipsima/issues/2"
                 "#issuecomment-5457754926"
             )
         }
@@ -119,7 +119,7 @@ PUBLIC_HTTPS_ALLOWANCES = {
                 "gitleaks_8.30.1_linux_x64.tar.gz"
             ),
             _secure_url(
-                "github.com/Phasmotic/Talaria/actions/runs/$run_id"
+                "github.com/Phasmotic/Ipsima/actions/runs/$run_id"
             ),
         }
     ),
@@ -147,8 +147,8 @@ PUBLIC_HTTPS_ALLOWANCES = {
     ),
     "scripts/test_gauntlet_status.py": frozenset(
         {
-            _secure_url("github.com/Phasmotic/Talaria.git"),
-            _secure_url("github.com/Phasmotic/talaria.git"),
+            _secure_url("github.com/Phasmotic/Ipsima.git"),
+            _secure_url("github.com/Phasmotic/ipsima.git"),
             _secure_url("github.com/example/Talaria.git"),
         }
     ),

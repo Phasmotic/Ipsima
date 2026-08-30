@@ -1,6 +1,6 @@
 # Hermes HEAD protocol re-verification
 
-This is the final source audit used to decide which Talaria findings are safe to offer upstream.
+This is the final source audit used to decide which Ipsima findings are safe to offer upstream.
 It compares the original pinned Hermes commit
 `e3b5512b7b3f6cbcb23ba5fffdc66d5015eca246` with exact upstream HEAD
 `26350357d76e4508c8df9304a3374bdc5a6f6220` on 2026-08-30. Source wins over
@@ -40,7 +40,7 @@ python3 -B scripts/derive_protocol.py <Hermes-checkout> \
 `STILL VALID` means the asserted upstream behavior remains true at HEAD. It is an upstream
 contribution only when the evidence also identifies inaccurate or materially incomplete upstream
 documentation. `STALE` means the assertion was true at the old pin but changed before HEAD.
-`NEVER VALID` means Talaria stated the claim too broadly or incorrectly even for the old pin.
+`NEVER VALID` means Ipsima stated the claim too broadly or incorrectly even for the old pin.
 Compound prose from `docs/PROTOCOL.md` is split below so every individual claim receives exactly
 one verdict.
 
@@ -122,7 +122,7 @@ one verdict.
 | 64 | STILL VALID | Stock Hermes still accepts plain HTTP with a warning (`agent/outbound_webhooks.py:278-293`). |
 | 65 | STILL VALID | Generic upstream docs cover the approval hook and outbound wrapper but still omit the ordinary gateway hook's approval-specific outbound shape and missing queue `request_id` (`website/docs/user-guide/features/hooks.md:1271-1302,1843-1927`). A concise augmentation is included in the prepared patch. |
 
-Talaria-owned transport policy, generator/conformance behavior, capture/sanitizer behavior, and
+Ipsima-owned transport policy, generator/conformance behavior, capture/sanitizer behavior, and
 the original catalog's local provenance in `docs/PROTOCOL.md` are repository implementation facts,
 not claims about live upstream HEAD. They were rechecked through the project tests and both exact
 catalog regenerations, but are not relabeled as upstream protocol claims here.
@@ -144,6 +144,6 @@ The findings that survive as upstream documentation work are:
    process-generation detection but not ring eviction, non-atomic snapshots, or ignored
    truncation.
 
-The TypeScript replay defect does not survive. No bug report is prepared. The claims Talaria owns
+The TypeScript replay defect does not survive. No bug report is prepared. The claims Ipsima owns
 as errors are the universal tool-lifecycle arrow and the repo-wide absence of `tool.progress`;
 both are corrected in `docs/PROTOCOL.md`.

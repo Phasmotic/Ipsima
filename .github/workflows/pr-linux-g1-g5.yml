@@ -18,4 +18,4 @@ jobs:
     name: Advisory G1–G5
     permissions:
       contents: read
-    uses: Phasmotic/Talaria/.github/workflows/linux-g1-g5-core.yml@2ad20993d1262eb2e8987f5ef226e19fa493eda5
+    uses: Phasmotic/Ipsima/.github/workflows/linux-g1-g5-core.yml@2ad20993d1262eb2e8987f5ef226e19fa493eda5

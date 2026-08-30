@@ -113,7 +113,7 @@ class GitHubPRModeTests(ShellClassifierTests):
             "github-hosted",
             "Linux",
             "X64",
-            "Phasmotic/Talaria",
+            "Phasmotic/Ipsima",
             "refs/pull/7/merge",
             SHA_A,
             "0",
@@ -138,7 +138,7 @@ class GitHubPRModeTests(ShellClassifierTests):
             2: "self-hosted",
             3: "macOS",
             4: "ARM64",
-            5: "Phasmotic/talaria",
+            5: "Phasmotic/ipsima",
             6: "refs/heads/main",
             7: "not-a-sha",
             8: "1",
@@ -263,7 +263,7 @@ class GitHubPRCoreWorkflowTests(unittest.TestCase):
         for evidence in (
             '"$GITHUB_EVENT_NAME" = "pull_request"',
             '"$RUNNER_ENVIRONMENT" = "github-hosted"',
-            '"$GITHUB_REPOSITORY" = "Phasmotic/Talaria"',
+            '"$GITHUB_REPOSITORY" = "Phasmotic/Ipsima"',
             '"$head_sha" = "$GITHUB_SHA"',
             '"$shallow_state" = "false"',
             "Swift version 6.3.3 (swift-6.3.3-RELEASE)",
@@ -289,7 +289,7 @@ class GitHubPRCallerWorkflowTests(unittest.TestCase):
 
     def core_pin(self) -> str:
         match = re.search(
-            r"^\s+uses: Phasmotic/Talaria/\.github/workflows/"
+            r"^\s+uses: Phasmotic/Ipsima/\.github/workflows/"
             r"linux-g1-g5-core\.yml@([0-9a-f]{40})$",
             self.source(),
             re.MULTILINE,
@@ -764,7 +764,7 @@ exit "$result"
             artifact = Path(temporary)
             script = fetcher + r'''
 ART="$1"
-TIER_B_REPOSITORY="Phasmotic/Talaria"
+TIER_B_REPOSITORY="Phasmotic/Ipsima"
 GH_LOG_BIN=gh
 tier_b_log_gh() { "$GH_LOG_BIN" "$@"; }
 MOCK_JOB_ID="$2"
@@ -844,7 +844,7 @@ fetch_tier_b_job_log "$MOCK_JOB_ID" "$MOCK_JOB_KEY"
                 (artifact / f"marker-{index}").write_text(marker, encoding="utf-8")
             script = capture + r'''
 ART="$1"
-TIER_B_REPOSITORY="Phasmotic/Talaria"
+TIER_B_REPOSITORY="Phasmotic/Ipsima"
 GH_RUN_BIN=gh
 tier_b_run_gh() { "$GH_RUN_BIN" "$@"; }
 EXPECTED_MARKER="$2"
@@ -1201,7 +1201,7 @@ exit "$capture_rc"
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertEqual(
                     arguments,
-                    "run view --repo Phasmotic/Talaria --job 67890 --log",
+                    "run view --repo Phasmotic/Ipsima --job 67890 --log",
                 )
                 self.assertEqual(output, "completed per-job runtime log\n")
                 self.assertEqual(error, "")
@@ -1218,7 +1218,7 @@ exit "$capture_rc"
                 self.assertNotEqual(result.returncode, 0)
                 self.assertEqual(
                     gh_arguments,
-                    "run view --repo Phasmotic/Talaria --job 67890 --log",
+                    "run view --repo Phasmotic/Ipsima --job 67890 --log",
                 )
 
     def test_per_job_fetch_rejects_unvalidated_identifiers_and_keys(self) -> None:
@@ -1257,9 +1257,9 @@ exit "$capture_rc"
 
     def test_canonical_https_and_ssh_origins_pass(self) -> None:
         urls = (
-            "https://github.com/Phasmotic/Talaria.git",
-            "git@github.com:Phasmotic/Talaria.git",
-            "ssh://git@github.com/Phasmotic/Talaria.git",
+            "https://github.com/Phasmotic/Ipsima.git",
+            "git@github.com:Phasmotic/Ipsima.git",
+            "ssh://git@github.com/Phasmotic/Ipsima.git",
         )
         for url in urls:
             with self.subTest(url=url):
@@ -1267,14 +1267,14 @@ exit "$capture_rc"
                     "talaria_classify_tier_b_repository",
                     "0",
                     url,
-                    "Phasmotic/Talaria",
+                    "Phasmotic/Ipsima",
                 )
-                self.assertEqual((status, repository), ("PASS", "Phasmotic/Talaria"))
+                self.assertEqual((status, repository), ("PASS", "Phasmotic/Ipsima"))
 
     def test_unreadable_or_noncanonical_origin_blocks(self) -> None:
         cases = (
-            ("2", "https://github.com/Phasmotic/Talaria.git"),
-            ("0", "https://github.com/Phasmotic/talaria.git"),
+            ("2", "https://github.com/Phasmotic/Ipsima.git"),
+            ("0", "https://github.com/Phasmotic/ipsima.git"),
             ("0", "https://github.com/example/Talaria.git"),
         )
         for remote_url_rc, url in cases:
@@ -1283,7 +1283,7 @@ exit "$capture_rc"
                     "talaria_classify_tier_b_repository",
                     remote_url_rc,
                     url,
-                    "Phasmotic/Talaria",
+                    "Phasmotic/Ipsima",
                 )
                 self.assertEqual(status, "BLOCKED")
 

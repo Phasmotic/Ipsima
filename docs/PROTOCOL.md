@@ -2,7 +2,7 @@
 
 ## Authority and provenance
 
-Hermes source wins over documentation. Talaria's current protocol catalog is derived from the
+Hermes source wins over documentation. Ipsima's current protocol catalog is derived from the
 public `NousResearch/hermes-agent` repository at this immutable commit:
 
 `e3b5512b7b3f6cbcb23ba5fffdc66d5015eca246`
@@ -42,7 +42,7 @@ catalog is `protocol/methods-26350357.json`; its SHA-256 is
 
 HEAD has 170 requests, 58 events, and the same 42 REST routes. It adds requests
 `mcp.servers.oauth.callback` and `prompt.btw`, plus events `btw.complete` and `todo.updated`, with
-no removals. The exhaustive classification—including stale replay findings and Talaria's own
+no removals. The exhaustive classification—including stale replay findings and Ipsima's own
 overbroad `tool.progress` statement—is recorded in
 [`contributions/nous-research/HEAD-REVERIFICATION.md`](../contributions/nous-research/HEAD-REVERIFICATION.md).
 The original catalog and the rest of this document remain the contract for the immutable pinned
@@ -130,12 +130,12 @@ pinned source defines no logout or session-revocation recheck at consumption tim
 
 `gateway.ready` is a separate protocol-ready milestone after successful transport admission. The
 pinned server defines no readiness deadline, retry count, or client acknowledgement. Those are
-Talaria-owned policy questions for P1.2, not facts to infer from socket `open`. The pinned shared
+Ipsima-owned policy questions for P1.2, not facts to infer from socket `open`. The pinned shared
 client itself marks the transport open before it later processes `gateway.ready`
-(`apps/shared/src/json-rpc-gateway.ts:198-265,448-458`); waiting for readiness is Talaria's planned
+(`apps/shared/src/json-rpc-gateway.ts:198-265,448-458`); waiting for readiness is Ipsima's planned
 handshake policy, not an upstream client requirement.
 
-P1.2 fixes that Talaria-owned policy as follows:
+P1.2 fixes that Ipsima-owned policy as follows:
 
 - `connect()` completes only after one text frame decodes as JSON-RPC 2.0 method `event`, with no
   identifier, result, error, or session ID, and with `params.type: "gateway.ready"` plus an object
@@ -266,7 +266,7 @@ complete envelopes (`tui_gateway/event_replay.py:36-68`), but the shared TypeScr
 bare `{type,session_id,seq,payload}` values and skips a real envelope because it has no top-level
 `type` (`apps/shared/src/json-rpc-gateway.ts:503-526`). Its test fabricates the bare shape at
 `apps/shared/src/json-rpc-gateway-replay.test.ts:131-146`. Server output is authoritative for
-Talaria; a later decoder may deliberately accept both shapes for compatibility, but must not copy
+Ipsima; a later decoder may deliberately accept both shapes for compatibility, but must not copy
 the bare-only assumption.
 
 That mismatch is fixed at HEAD by commit
@@ -278,7 +278,7 @@ valid upstream contribution.
 Reconnect requires several distinct operations, but the pinned source establishes no lossless
 ordering or barrier among them:
 
-- Mint a fresh ticket and open a new socket. Treat that socket's `gateway.ready` as Talaria's
+- Mint a fresh ticket and open a new socket. Treat that socket's `gateway.ready` as Ipsima's
   protocol-ready boundary.
 - Reattach server state. A still-live session can be rebound by `session.activate`; a durable
   session can be reopened by `session.resume`. The latter may reuse the old live ID or return a new
@@ -294,7 +294,7 @@ ordering or barrier among them:
 
 The shared client starts replay from socket `open`, while the desktop's session reactivation runs
 independently after a closed-to-open transition (`apps/shared/src/json-rpc-gateway.ts:211-223`,
-`apps/desktop/src/app/session/hooks/use-route-resume.ts:112-166`). P1.4 must define how Talaria
+`apps/desktop/src/app/session/hooks/use-route-resume.ts:112-166`). P1.4 must define how Ipsima
 buffers or sequences reattach, snapshot, replay, and newly arriving live events; no order shown
 above is an upstream guarantee. At the pinned commit, a lower counter detects some resets but
 cannot identify a generation reliably. HEAD's epoch now identifies process-generation changes,
@@ -380,7 +380,7 @@ to the tool carries `timed_out:true` (`tui_gateway/server.py:4069-4085,12617-126
 Only clarify has an explicit pending-state snapshot for reconnect, including already locked batch
 answers (`tui_gateway/server.py:2308-2332,9665-9668`). The other eight rely at most on the bounded
 event ring; source defines no durable pending snapshot when their request has fallen out of it.
-Timeout does not cancel client-side work, so Talaria must never auto-retry side-effecting
+Timeout does not cancel client-side work, so Ipsima must never auto-retry side-effecting
 `mcp.setup`, `preview.act`, or `tour` requests.
 
 Bundled-client expiry cleanup is not complete enough to infer a universal UI contract. The desktop
@@ -397,7 +397,7 @@ The server registry binds a pending waiter only to the short request ID and owni
 `_respond` looks up only the request ID. It does not verify response family, session, or transport,
 and it accepts another live reply before cleanup. The source therefore does not establish
 at-most-once resolution or cross-family protection. The ID contains only 32 random bits and
-insertion performs no collision check. Talaria's later state machine must retain and match family,
+insertion performs no collision check. Ipsima's later state machine must retain and match family,
 session, and request identity itself; it must not replay passwords or secrets. The secret-capture
 callback is also process-global and is rewired to a session-capturing closure for each turn
 (`tools/skills_tool.py:177,248-250`, `tui_gateway/server.py:4038-4043,7081-7102,11464-11470`), so
@@ -451,7 +451,7 @@ not implement it.
 ### Stock-Hermes capability verdict
 
 At the pinned commit, stock Hermes **can** send `pre_approval_request` through `hooks.outbound`;
-Talaria does not need a Hermes fork or protocol patch for approval wakeups.
+Ipsima does not need a Hermes fork or protocol patch for approval wakeups.
 
 The source chain is explicit. Every upstream path below is evaluated at the immutable commit
 named in this document's provenance section:
@@ -526,7 +526,7 @@ queue's `request_id`. The queue entry creates that identifier at `tools/approval
 Some approval-transport paths add `request_id` and `request_digest`
 (`tools/approval.py:4213-4223`), and a coalesced follower can add `coalesced`
 (`tools/approval.py:4310-4319`), so receivers must tolerate those extra members without depending
-on them. A Talaria wakeup reconnects to the gateway, calls `approval.pending` to obtain the
+on them. A Ipsima wakeup reconnects to the gateway, calls `approval.pending` to obtain the
 authoritative pending record and `request_id`, and only then uses `approval.respond`; those
 handlers are source-defined at `tui_gateway/methods_prompt.py:1588-1690`.
 
@@ -549,7 +549,7 @@ The signature is HMAC-SHA-256 over the exact raw body bytes, keyed by the UTF-8 
 resolved secret. Secret resolution is defined at `agent/outbound_webhooks.py:358-373`: a configured
 `secret_env` takes precedence over an inline `secret`. If that environment lookup is absent or
 empty, Hermes does not fall back to the inline value and omits the signature; with no usable
-secret it also sends unsigned. Talaria's push ingress must require a configured secret and reject
+secret it also sends unsigned. Ipsima's push ingress must require a configured secret and reject
 an absent, malformed, or invalid signature.
 
 The HMAC authenticates only the body; it does not cover the HTTP headers. After verifying the raw
@@ -572,7 +572,7 @@ errors and connection failures, but not redirects or client errors. Redirects ar
 response bodies are ignored, and process-exit flushing is best-effort for at most five seconds. A
 retry reuses the same body, timestamp, delivery ID, and signature.
 
-Stock Hermes accepts plain HTTP with a warning. Talaria's architecture requires HTTPS and treats
+Stock Hermes accepts plain HTTP with a warning. Ipsima's architecture requires HTTPS and treats
 the webhook only as a lossy wakeup hint; foreground and background reconciliation remain
 authoritative.
 

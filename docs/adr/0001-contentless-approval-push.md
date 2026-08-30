@@ -7,8 +7,8 @@
 
 ## Context
 
-Talaria must alert a user to a pending approval while the app is suspended, without requiring a
-Hermes fork and without disclosing command text to the operator of Talaria's APNs relay. The app
+Ipsima must alert a user to a pending approval while the app is suspended, without requiring a
+Hermes fork and without disclosing command text to the operator of Ipsima's APNs relay. The app
 must fetch all approval details from the user's gateway over TLS. Hermes must not store or handle
 APNs device tokens, while the bundle-bound APNs signing key must remain outside Hermes.
 
@@ -30,7 +30,7 @@ must remain a wakeup hint followed by gateway reconciliation, never the source o
 Use stock Hermes with two distinct relay trust zones:
 
 1. A **user-controlled gateway-side privacy bridge** receives the raw Hermes webhook.
-2. A **Talaria APNs delivery relay** receives only a minimal opaque wake request and holds the
+2. A **Ipsima APNs delivery relay** receives only a minimal opaque wake request and holds the
    bundle-bound APNs signing key.
 
 These are separate components and separate trust boundaries. The hosted APNs relay does not
@@ -38,16 +38,16 @@ accept raw Hermes lifecycle webhooks.
 
 ### Registration
 
-Talaria registers its APNs device token directly with the APNs delivery relay over TLS. The relay
+Ipsima registers its APNs device token directly with the APNs delivery relay over TLS. The relay
 stores the token against a subscription identifier generated from 32 CSPRNG bytes and encoded as
 43 unpadded base64url characters. It returns that identifier plus a scoped 32-byte CSPRNG bridge
-authentication key. Talaria independently creates a 32-byte CSPRNG session-alias key. Both keys
+authentication key. Ipsima independently creates a 32-byte CSPRNG session-alias key. Both keys
 are unique per subscription and gateway profile, are never reused across profiles, and are stored
 in the Keychain. Hermes never receives the device token, either key, or the APNs signing key.
 
 The user configures stock Hermes `hooks.outbound` to send `pre_approval_request` to the
 gateway-side privacy bridge over HTTPS. The Hermes target must use an HMAC secret; unsigned
-delivery is unsupported. During P4 setup, Talaria transfers the subscription identifier, scoped
+delivery is unsupported. During P4 setup, Ipsima transfers the subscription identifier, scoped
 bridge authentication key, and session-alias key to the user-controlled bridge through the
 approved pairing boundary. The bridge never receives the APNs device token.
 
@@ -107,8 +107,8 @@ The body is limited to 512 bytes and unknown, missing, duplicate, or wrongly typ
 rejected. The ingress also requires exactly one non-coalesced occurrence of each security header;
 duplicates and comma-coalesced values are rejected before authentication. Its only application
 headers are `Content-Type: application/json`,
-`X-Talaria-Delivery: <delivery_id>`, and
-`X-Talaria-Signature-256: sha256=<64 lowercase hexadecimal characters>`. The signature is
+`X-Ipsima-Delivery: <delivery_id>`, and
+`X-Ipsima-Signature-256: sha256=<64 lowercase hexadecimal characters>`. The signature is
 HMAC-SHA-256 over the exact raw body using the subscription's scoped bridge authentication key.
 TLS is mandatory.
 
@@ -140,7 +140,7 @@ After resolving the encrypted-at-rest APNs device token, the relay sends exactly
 
 Beyond APNs-required provider authentication and transport metadata, the allowed
 application-controlled APNs headers are `apns-push-type: background`,
-`apns-priority: 5`, the registered Talaria bundle identifier as `apns-topic`, and an
+`apns-priority: 5`, the registered Ipsima bundle identifier as `apns-topic`, and an
 `apns-expiration` no later than five minutes after the validated `sent_at`. The relay does not send
 an alert, title, subtitle, sound, badge, category, thread identifier, mutable-content flag, or any
 other custom payload key. If the wake is already expired, it is not sent.
@@ -164,7 +164,7 @@ explicit ADR revision.
 
 ### App wake and reconciliation
 
-On a background wake, Talaria recomputes aliases for its local sessions to map `session_alias` to
+On a background wake, Ipsima recomputes aliases for its local sessions to map `session_alias` to
 the registered gateway profile, connects to that gateway over its established TLS/TOFU trust
 boundary, and calls `approval.pending`. The returned pending record supplies the authoritative
 full command,
@@ -217,7 +217,7 @@ adoption proposal belongs to hard-gated P7 and requires explicit owner authoriza
   contains the hook-supplied command—which can include sensitive unredacted text—and
   working-directory data; contentless APNs does not remove that ingress exposure.
 - **Put APNs device tokens or signing logic in Hermes.** Rejected because device registration and
-  the bundle-bound signing key are Talaria infrastructure, not a generic Hermes responsibility.
+  the bundle-bound signing key are Ipsima infrastructure, not a generic Hermes responsibility.
 - **Patch Hermes to emit a reduced approval webhook.** Rejected because stock Hermes already
   exposes the event and a separate bridge provides minimization without an upstream dependency.
 - **Treat webhook delivery as durable approval state.** Rejected because the sender queue is

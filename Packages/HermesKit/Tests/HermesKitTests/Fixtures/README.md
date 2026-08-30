@@ -22,7 +22,7 @@ pretend to be a complete session or streaming transcript.
 ## Capture contract
 
 The harness runs only on Linux. On this machine, enter Ubuntu through the supported
-PowerShell-launched WSL path and run from the Talaria repository root. Prerequisites are:
+PowerShell-launched WSL path and run from the Ipsima repository root. Prerequisites are:
 
 - a clean Hermes checkout at `.gauntlet/hermes-capture-src` whose origin, commit, and pinned
   source bytes match `protocol/methods.json`;
