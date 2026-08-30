@@ -73,7 +73,7 @@ PUBLIC_HTTPS_ALLOWANCES = {
     "docs/BRIEF.md": frozenset(
         {
             _secure_url(
-                "github.com/markschonfeld/Talaria/issues/2"
+                "github.com/Phasmotic/Talaria/issues/2"
                 "#issuecomment-5457754926"
             )
         }
@@ -81,7 +81,7 @@ PUBLIC_HTTPS_ALLOWANCES = {
     "docs/GOVERNANCE.md": frozenset(
         {
             _secure_url(
-                "github.com/markschonfeld/Talaria/issues/2"
+                "github.com/Phasmotic/Talaria/issues/2"
                 "#issuecomment-5457754926"
             )
         }
@@ -93,6 +93,9 @@ PUBLIC_HTTPS_ALLOWANCES = {
         }
     ),
     "protocol/methods.json": frozenset(
+        {_secure_url("github.com/NousResearch/hermes-agent.git")}
+    ),
+    "protocol/methods-26350357.json": frozenset(
         {_secure_url("github.com/NousResearch/hermes-agent.git")}
     ),
     "scripts/derive_protocol.py": frozenset(
@@ -116,7 +119,7 @@ PUBLIC_HTTPS_ALLOWANCES = {
                 "gitleaks_8.30.1_linux_x64.tar.gz"
             ),
             _secure_url(
-                "github.com/markschonfeld/Talaria/actions/runs/$run_id"
+                "github.com/Phasmotic/Talaria/actions/runs/$run_id"
             ),
         }
     ),
@@ -144,8 +147,8 @@ PUBLIC_HTTPS_ALLOWANCES = {
     ),
     "scripts/test_gauntlet_status.py": frozenset(
         {
-            _secure_url("github.com/markschonfeld/Talaria.git"),
-            _secure_url("github.com/markschonfeld/talaria.git"),
+            _secure_url("github.com/Phasmotic/Talaria.git"),
+            _secure_url("github.com/Phasmotic/talaria.git"),
             _secure_url("github.com/example/Talaria.git"),
         }
     ),

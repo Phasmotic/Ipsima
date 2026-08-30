@@ -21,7 +21,7 @@ ATTEMPT = 1
 HEAD_SHA = "a" * 40
 CORRELATION = "talaria-" + "0123456789abcdef0123456789abcdef"
 TITLE = f"Talaria Tier B: {CORRELATION}"
-REPOSITORY = "markschonfeld/Talaria"
+REPOSITORY = "Phasmotic/Talaria"
 JOB_IDS = {"ios": 101, "watchos": 102, "archive": 103}
 JOB_STARTED = "2026-01-01T00:00:00Z"
 JOB_COMPLETED = "2026-01-01T00:10:00Z"
@@ -286,7 +286,7 @@ class TierBRunSnapshotTests(unittest.TestCase):
         variants.append(("title", wrong_title))
         for label, url in (
             ("run", run_url(RUN_ID + 1)),
-            ("repository", run_url(repository="markschonfeld/Other")),
+            ("repository", run_url(repository="Phasmotic/Other")),
             ("scheme", "http" + run_url()[5:]),
             ("missing attempt", run_base_url()),
             ("wrong attempt", run_url(attempt=2)),
@@ -552,7 +552,7 @@ class TierBRunSnapshotTests(unittest.TestCase):
                 "expected_title": "Talaria Tier B: talaria-"
                 + "fedcba9876543210fedcba9876543210"
             },
-            {"expected_repository": "markschonfeld/Other"},
+            {"expected_repository": "Phasmotic/Other"},
             {"expected_attempt": "2"},
         )
         for arguments in variants:

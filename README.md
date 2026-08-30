@@ -1,19 +1,21 @@
 # Talaria
 
-A native **iOS + watchOS client for [Hermes Agent](https://github.com/NousResearch/hermes-agent)**,
-being built against the real `tui_gateway` WebSocket JSON-RPC protocol.
+An unfinished native **iOS + watchOS client experiment for
+[Hermes Agent](https://github.com/NousResearch/hermes-agent)**, built against the real
+`tui_gateway` WebSocket JSON-RPC protocol.
 
-> ## ⚠️ Preview — not usable yet
+> ## ⚠️ Development stopped — not usable
 >
 > **There is no released or usable app.** The iOS and watchOS targets are placeholder shells.
 > The app does not yet expose connection, chat, or approval functionality.
 >
 > What does exist is the foundation: a source-derived protocol contract, a pure-Swift codec, a
 > sanitized capture fixture, a tested WebSocket transport foundation, and a verification harness.
-> Phase 0 is complete and P1 is underway.
+> Phase 0 was completed and P1 stopped after the WebSocket transport foundation. No P1.3,
+> P2–P7, or Stage 2 work is planned.
 >
-> No releases, no TestFlight, no distribution. Watch the repository if you want to know when that
-> changes.
+> No releases, no TestFlight, and no distribution. The repository remains available as an
+> MIT-licensed protocol, verification, and transport reference.
 
 ## Why this exists
 
@@ -54,37 +56,35 @@ Source wins over prose. That rule corrected Talaria's own earlier framing claim:
 text message carries one JSON-RPC object, while newline framing is used only for stdio. The
 reviewed contract and its provenance are recorded in [docs/PROTOCOL.md](docs/PROTOCOL.md).
 
-## Where it's going
+## Where it stopped
 
 | Phase | Scope | State |
 | --- | --- | --- |
 | P0 | Scaffold, pinned protocol derivation, capture fixture, trustworthy gates | Complete |
-| P1 | HermesKit — transport, models, reconnect/replay, approval state, offline outbox, TLS TOFU trust store, mock gateway | In progress — protocol research and WebSocket transport foundations |
-| P2 | Connection and first run — QR pairing, mDNS, Portal OAuth, trust acceptance, Keychain, multi-gateway profiles | Planned |
-| P3 | Chat and approvals — streaming sessions, tool cards, safe approvals, steering, rendering, attachments, localization | Planned |
-| P4 | Notifications, background execution, and system integration | Architecture recorded; code blocked on the operational threat model |
-| P5 | Parity surfaces and iPad — artifacts, files, terminal, scheduled work, skills and MCP, subagents, voice | Planned |
-| P6 | watchOS — approvals, session status, complications, Smart Stack, independent networking fallback | Planned |
-| P7 | Signing, distribution, and the upstream-adoption package | Hard-gated; not authorized |
+| P1 | HermesKit — transport, models, reconnect/replay, approval state, offline outbox, TLS TOFU trust store, mock gateway | Stopped after protocol research and WebSocket transport foundations |
+| P2 | Connection and first run — QR pairing, mDNS, Portal OAuth, trust acceptance, Keychain, multi-gateway profiles | Not proceeding |
+| P3 | Chat and approvals — streaming sessions, tool cards, safe approvals, steering, rendering, attachments, localization | Not proceeding |
+| P4 | Notifications, background execution, and system integration | Architecture recorded; implementation not proceeding |
+| P5 | Parity surfaces and iPad — artifacts, files, terminal, scheduled work, skills and MCP, subagents, voice | Not proceeding |
+| P6 | watchOS — approvals, session status, complications, Smart Stack, independent networking fallback | Not proceeding |
+| P7 | Signing, distribution, and the upstream-adoption package | Not proceeding |
 
 The full contract, including gate definitions and stop conditions, is in the
 [operating brief](docs/BRIEF.md).
 
 ## Contributing and upstreaming
 
-Talaria is MIT-licensed, the same license as Hermes Agent. If Nous Research eventually wants the
-derived protocol catalog, the client, or a subset upstream, the license will not stand in the
-way. That is an open offer, not a claim of endorsement or authorization to begin P7 work.
+Talaria is MIT-licensed, the same license as Hermes Agent. The final upstream re-verification,
+prepared documentation corrections, and offer of the derived catalog are retained under
+[`contributions/nous-research`](contributions/nous-research). These are prepared materials for the
+owner to file, not a claim of Nous Research endorsement.
 
-Issues and pull requests are welcome. The gate policy in
-[governance](docs/GOVERNANCE.md) applies to contributions as it does to everything else: a gate
-is never weakened to make a change pass. Signing, distribution, and formal upstream-adoption
-work remain hard-gated to P7.
+No further Talaria client development is planned. The gate policy in
+[governance](docs/GOVERNANCE.md) remains the record of how the existing work was verified.
 
-Pull requests into `main` receive an advisory GitHub-hosted Ubuntu check for G1–G5. It is fast
-feedback, not authoritative phase evidence or a required status check; the trusted-attestation
-path is the accepted but unimplemented Stage 2 of
-[ADR-0002](docs/adr/0002-source-bound-pull-request-gauntlet.md).
+Pull requests into `main` receive the existing advisory GitHub-hosted Ubuntu check for G1–G5. The
+accepted Stage 2 trusted-attestation design in
+[ADR-0002](docs/adr/0002-source-bound-pull-request-gauntlet.md) was not implemented.
 
 ## Layout
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import io
+import json
 import pathlib
 import subprocess
 import tempfile
@@ -157,6 +158,29 @@ class CatalogDerivationTests(unittest.TestCase):
             hashlib.sha256((REPO / "protocol" / "methods.json").read_bytes()).hexdigest(),
         )
 
+    def test_head_reverification_catalog_is_bound_to_exact_evidence(self) -> None:
+        path = REPO / "protocol" / "methods-26350357.json"
+        raw = path.read_bytes()
+        self.assertEqual(
+            hashlib.sha256(raw).hexdigest(),
+            "8863412ba36e4b518da9aff635312e937d97a7a44c92ebf52c99c1694a15255b",
+        )
+        catalog = json.loads(raw)
+        self.assertEqual(
+            catalog["source"]["commit"],
+            "26350357d76e4508c8df9304a3374bdc5a6f6220",
+        )
+        self.assertEqual(catalog["derived_at"], "2026-08-30")
+        self.assertEqual(
+            (
+                len(catalog["requests"]),
+                len(catalog["events"]),
+                len(catalog["rest_routes"]),
+            ),
+            (170, 58, 42),
+        )
+        self.assertEqual(raw, derive.catalog_bytes(catalog))
+
     def test_catalog_manifest_hashes_every_declared_input(self) -> None:
         files = _fake_files()
         catalog = derive.derive_catalog(files, expected_counts=None)
@@ -178,6 +202,27 @@ class CatalogDerivationTests(unittest.TestCase):
             catalog["source"]["repository"], derive.SOURCE_REPOSITORY
         )
         self.assertEqual(catalog["source"]["commit"], derive.SOURCE_COMMIT)
+
+    def test_alternate_revision_and_date_are_explicit_catalog_provenance(self) -> None:
+        revision = "a" * 40
+        catalog = derive.derive_catalog(
+            _fake_files(),
+            expected_counts=None,
+            source_commit=revision,
+            derived_at="2026-08-30",
+        )
+        self.assertEqual(catalog["source"]["commit"], revision)
+        self.assertEqual(catalog["derived_at"], "2026-08-30")
+
+    def test_revision_and_date_must_be_immutable_canonical_values(self) -> None:
+        with self.assertRaisesRegex(derive.DerivationBlocked, "full lowercase"):
+            derive.derive_catalog(
+                _fake_files(), expected_counts=None, source_commit="HEAD"
+            )
+        with self.assertRaisesRegex(derive.DerivationBlocked, "calendar date"):
+            derive.derive_catalog(
+                _fake_files(), expected_counts=None, derived_at="2026-02-30"
+            )
 
     def test_transport_framing_distinguishes_websocket_messages_from_stdio_lines(
         self,
@@ -411,6 +456,53 @@ class GitObjectSourceTests(unittest.TestCase):
 
 
 class OutputContractTests(unittest.TestCase):
+    def test_alternate_revision_cannot_replace_the_pinned_default_catalog(self) -> None:
+        error = io.StringIO()
+        with contextlib.redirect_stderr(error):
+            status = derive.main([".", "--revision", "a" * 40])
+        self.assertEqual(status, 2)
+        self.assertIn("explicit non-default output", error.getvalue())
+
+    def test_default_catalog_rejects_changed_provenance_profile(self) -> None:
+        cases = (
+            ["--derived-at", "2026-08-30"],
+            ["--expected-counts", "169", "56", "42"],
+        )
+        for arguments in cases:
+            with self.subTest(arguments=arguments):
+                error = io.StringIO()
+                with contextlib.redirect_stderr(error):
+                    status = derive.main([".", *arguments])
+                self.assertEqual(status, 2)
+                self.assertIn("complete pinned provenance profile", error.getvalue())
+
+    def test_alternate_revision_requires_explicit_date_and_counts(self) -> None:
+        with _temporary_directory() as temporary:
+            output = pathlib.Path(temporary) / "alternate.json"
+            cases = (
+                ["--derived-at", "2026-08-30"],
+                ["--expected-counts", "170", "58", "42"],
+            )
+            for arguments in cases:
+                with self.subTest(arguments=arguments):
+                    error = io.StringIO()
+                    with contextlib.redirect_stderr(error):
+                        status = derive.main(
+                            [
+                                ".",
+                                "--revision",
+                                "a" * 40,
+                                "--output",
+                                str(output),
+                                *arguments,
+                            ]
+                        )
+                    self.assertEqual(status, 2)
+                    self.assertIn(
+                        "explicit derived-at and expected counts", error.getvalue()
+                    )
+                    self.assertFalse(output.exists())
+
     def test_atomic_write_replaces_and_leaves_no_temporary_file(self) -> None:
         with _temporary_directory() as temporary:
             target = pathlib.Path(temporary) / "nested" / "methods.json"

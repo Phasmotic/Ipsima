@@ -2,7 +2,7 @@
 
 ## Authority and record
 
-Talaria is maintained in the public `markschonfeld/Talaria` repository. Preserve that exact
+Talaria is maintained in the public `Phasmotic/Talaria` repository. Preserve that exact
 capitalization in remotes, workflows, and documentation. The public audit ledger is issue #2.
 Pull request #1 preserved and reviewed the recovered Phase 0 handoff, audit repair, and README
 correction; it merged into `main` at `5a48deb`.
@@ -12,14 +12,24 @@ revise it. Expensive-to-reconstruct findings and evidence belong in the reposito
 or issue rather than only in a conversation. Public evidence must contain repository-relative
 paths only and must exclude local environment details and sensitive data.
 
+### Final project disposition — 2026-08-30
+
+The owner ended Talaria client development after the final upstream-contribution objective. No
+P1.3, P2–P7, Stage 2, or other client work is planned. The phase descriptions below are retained as
+historical design records, not an active roadmap. The final objective re-derived the protocol
+catalog at exact live HEAD, reclassified every upstream-facing claim, dropped the replay bug report
+after confirming its upstream fix, and prepared only the surviving documentation corrections and
+MIT catalog offer under `contributions/nous-research`. The owner, not this build agent, decides
+whether and when to file those prepared materials upstream.
+
 Audit repair closed at `96df2d0`. The revised phase plan, pinned-source outbound-hook finding,
 and pre-code push architecture are now recorded in this brief, `docs/PROTOCOL.md`, and
-[ADR-0001](adr/0001-contentless-approval-push.md). P1 implementation has not begun and is outside
-this run.
+[ADR-0001](adr/0001-contentless-approval-push.md). At that checkpoint, P1 implementation had not
+begun and remained outside the audit-repair run.
 
 [ADR-0002](adr/0002-source-bound-pull-request-gauntlet.md) records the accepted two-stage PR
 verification architecture. Only advisory Stage 1 Linux G1–G5 is implemented now. Stage 2 and P1
-remain outside this run.
+remained outside that Stage 1 run; Stage 2 was never implemented.
 
 ### Coordination record
 
@@ -272,7 +282,7 @@ cannot reliably fail for the claimed reason: the retained ten-verdict history ha
 3.0482066832 seconds and six failures, while exact-SHA reruns moved by as much as 1.56285685
 seconds. Every historical pass and failure remains a measurement from that defective instrument;
 none remains a certification. The complete sanitized record is linked from
-[public audit issue #2](https://github.com/markschonfeld/Talaria/issues/2#issuecomment-5457754926).
+[public audit issue #2](https://github.com/Phasmotic/Talaria/issues/2#issuecomment-5457754926).
 
 Replacement coverage is **DEFERRED to P2**, to be designed alongside the re-arm when a real app's
 launch cost is worth measuring. P1.2 does not run a paired link study, pre-main timer, binary-size

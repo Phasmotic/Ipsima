@@ -32,6 +32,22 @@ The P1.1 semantic derivation adds no catalog field because the current generator
 identity and provenance only; runtime facts remain source-cited here, and the catalog must still
 regenerate byte-identically.
 
+## Final live-HEAD re-verification
+
+Before preparing any upstream contribution, every upstream-facing claim in this document was
+rechecked against exact Hermes commit
+`26350357d76e4508c8df9304a3374bdc5a6f6220` on 2026-08-30. The independently derived second
+catalog is `protocol/methods-26350357.json`; its SHA-256 is
+`8863412ba36e4b518da9aff635312e937d97a7a44c92ebf52c99c1694a15255b`.
+
+HEAD has 170 requests, 58 events, and the same 42 REST routes. It adds requests
+`mcp.servers.oauth.callback` and `prompt.btw`, plus events `btw.complete` and `todo.updated`, with
+no removals. The exhaustive classification—including stale replay findings and Talaria's own
+overbroad `tool.progress` statement—is recorded in
+[`contributions/nous-research/HEAD-REVERIFICATION.md`](../contributions/nous-research/HEAD-REVERIFICATION.md).
+The original catalog and the rest of this document remain the contract for the immutable pinned
+commit unless a paragraph explicitly gives a live-HEAD status.
+
 ## Transport and framing
 
 The primary transport is WebSocket JSON-RPC 2.0. Each WebSocket text message contains exactly
@@ -185,11 +201,16 @@ concerns.
 
 ## Lifecycle facts established from source
 
-The tool-event lifecycle is:
+The TUI gateway's tool-event identities are:
 
 `tool.start` → `tool.generating` → `tool.output_risk` → `tool.complete`
 
-There is no `tool.progress` event in the pinned source.
+This is not a universal strict sequence: `tool.generating` and `tool.output_risk` are conditional.
+The TUI gateway has no `tool.progress` producer at either the pin or re-verified HEAD. The earlier
+repo-wide statement that `tool.progress` was absent from the pinned source was never valid: the
+pinned shared client accepted that identifier, and at HEAD the separate REST/SSE API emits
+`hermes.tool.progress`. Upstream's TUI-gateway event guide still presents `tool.progress` as a TUI
+producer event, which is the narrower surviving documentation defect.
 
 The timeout-backed `_block` derivation contains exactly nine request/expire families:
 `clarify`, `mcp.setup`, `preview.act`, `preview.read`, `secret`, `sudo`, `terminal.read`, `tour`,
@@ -202,12 +223,19 @@ the complete event catalog contains ten names ending in `.request`, but only nin
 the catalog inventories identities rather than every payload member, the pinned source and
 sanitized captures remain authoritative for its payload.
 
-## Replay, reconnect, and the absent `replay_epoch`
+## Replay and reconnect at the pinned commit
 
 There is **no** `replay_epoch`, `replayEpoch`, replay-generation field, or equivalent wire identity
 anywhere in the pinned source. `gateway.ready` advertises skin, change-event, and heartbeat
 capabilities, but no replay generation (`tui_gateway/ws.py:368-382`). The earlier claim that a
 client could compare a gateway replay epoch was incorrect.
+
+**Live-HEAD status: STALE.** HEAD defines a process replay epoch, emits `replay_epoch` in both
+`gateway.ready` transports, returns `epoch` from `session.events.since`, and uses epoch changes to
+clear stale client watermarks (`tui_gateway/event_replay.py:25-31,47-49`,
+`tui_gateway/ws.py:369-385`, `tui_gateway/entry.py:454-466`,
+`tui_gateway/methods_session.py:3686-3697`,
+`apps/shared/src/json-rpc-gateway.ts:465-479,565-578,617-632` at HEAD).
 
 Hermes instead implements a process-memory replay ring in `tui_gateway/event_replay.py:24-74`:
 
@@ -227,7 +255,11 @@ retained sequence is greater than `last_seen + 1`. An unknown or evicted ring re
 array, `latest_seq: 0`, and `truncated: false`, so it is indistinguishable from a known session
 that has never emitted a sequenced event.
 
-### Deferred upstream contribution candidate: TypeScript replay envelope mismatch
+**Live-HEAD status: PARTLY STALE.** HEAD adds `epoch` to the result and stores/returns bare event
+`params` objects rather than complete JSON-RPC envelopes. The bounded-ring, truncation, and
+unknown-ring behavior remains.
+
+### Resolved upstream after the pin: TypeScript replay envelope mismatch
 
 The pinned source contains a real producer/consumer disagreement. The server stores and returns
 complete envelopes (`tui_gateway/event_replay.py:36-68`), but the shared TypeScript client expects
@@ -237,9 +269,11 @@ bare `{type,session_id,seq,payload}` values and skips a real envelope because it
 Talaria; a later decoder may deliberately accept both shapes for compatibility, but must not copy
 the bare-only assumption.
 
-Candidate contribution: align the consumer and test with server output, optionally accepting the
-bare shape defensively for compatibility. This is a repository record only; do not open an
-upstream artifact before the post-P3 contribution review and separate authorization.
+That mismatch is fixed at HEAD by commit
+`beb794123618c997e82791316df643fc61347665`. The server now deliberately returns bare events, the
+client consumes that shape, and tests cover the real producer shape, reject the obsolete envelope,
+hold live frames during replay, and reset watermarks on epoch change. No replay bug report is a
+valid upstream contribution.
 
 Reconnect requires several distinct operations, but the pinned source establishes no lossless
 ordering or barrier among them:
@@ -250,8 +284,9 @@ ordering or barrier among them:
   session can be reopened by `session.resume`. The latter may reuse the old live ID or return a new
   one, and it follows compression-continuation IDs to their current tip
   (`tui_gateway/methods_session.py:372-1078,1219-1240`).
-- Treat replay only as transient event-gap recovery for a reused live ID. Decode each returned
-  full envelope and correlate by `params.session_id` and `params.seq`.
+- Treat replay only as transient event-gap recovery for a reused live ID. At the pinned commit,
+  decode each returned full envelope and correlate by `params.session_id` and `params.seq`; at
+  live HEAD, decode each returned bare event and correlate by `session_id` and `seq`.
 - Reconcile from a transcript snapshot through resume/activate, `session.history`, or the
   authenticated durable transcript whenever replay is truncated, malformed, refers to a replaced
   live ID, reports a lower `latest_seq` than a retained watermark, or otherwise cannot prove
@@ -261,10 +296,10 @@ The shared client starts replay from socket `open`, while the desktop's session 
 independently after a closed-to-open transition (`apps/shared/src/json-rpc-gateway.ts:211-223`,
 `apps/desktop/src/app/session/hooks/use-route-resume.ts:112-166`). P1.4 must define how Talaria
 buffers or sequences reattach, snapshot, replay, and newly arriving live events; no order shown
-above is an upstream guarantee. Conservative reconciliation is Talaria's safety rule, not an
-upstream epoch guarantee. A lower counter detects some resets but cannot identify a generation
-reliably: a new producer can advance past the old watermark before recovery. The pinned protocol
-cannot promise lossless replay across restart or eviction.
+above is an upstream guarantee. At the pinned commit, a lower counter detects some resets but
+cannot identify a generation reliably. HEAD's epoch now identifies process-generation changes,
+but it does not recover evicted or pre-restart history. Neither revision can promise lossless
+replay across restart or eviction.
 
 Source-undetermined replay questions remain open: there is no normative choice among
 `session.activate`, `session.resume`, `session.history`, and the durable REST transcript for every
@@ -288,11 +323,12 @@ later control frame on that transport, and coalescing does not merge payloads or
 
 The pinned source does **not** establish a strict total order across concurrent producer threads.
 Sequence assignment and transport enqueue use different locks, and replay can arrive while live
-events continue. The shared client advances its maximum watermark but still dispatches duplicate,
-late, or decreasing-sequence events; it neither reorders nor suppresses them
-(`apps/shared/src/json-rpc-gateway.ts:448-478,514-527`). Whether strict sequence order is intended
-across those boundaries, and whether central routing or downstream reducers own deduplication,
-remain source-undetermined.
+events continue. At the pin, the shared client advanced its maximum watermark but still dispatched
+duplicate, late, or decreasing-sequence events. At HEAD, replay-returned events and live events
+parked while replay is in flight are gated against non-increasing sequences, but ordinary live
+frames still dispatch after watermark recording (`apps/shared/src/json-rpc-gateway.ts:475-494,
+529-648` at HEAD). The lack of a strict producer total order remains; the old replay-race behavior
+is stale while the ordinary-live limitation survives.
 
 Replay response fields are not one atomic snapshot. `events_since` releases the replay lock before
 the handler separately reads truncation state and `latest_seq`; a new event can land between those

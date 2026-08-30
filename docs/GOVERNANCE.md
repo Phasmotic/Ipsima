@@ -1,5 +1,10 @@
 # Talaria governance
 
+> **Final disposition (2026-08-30):** Talaria client development ended after the final
+> upstream-contribution objective. No P1.3, P2–P7, or Stage 2 work is planned. The rules below
+> remain the verification record for the existing source and prepared contribution artifacts;
+> dormant arm points are historical and will not be pursued by this project.
+
 ## Phase plan boundaries
 
 The phase plan is ordered and condition-gated. Renumbering a phase does not change a gate's arm
@@ -109,7 +114,7 @@ The retained ten-verdict history has median 3.0482066832 seconds and six failure
 twelve-measurement record restores two successful exact-SHA retries. All historical passes and
 failures remain valid measurements from a defectively specified instrument, and none remains a
 certification. The complete sanitized dataset and conflict-of-interest note are recorded in
-[public audit issue #2](https://github.com/markschonfeld/Talaria/issues/2#issuecomment-5457754926).
+[public audit issue #2](https://github.com/Phasmotic/Talaria/issues/2#issuecomment-5457754926).
 
 Replacement coverage is deferred to P2, to be designed alongside the re-arm when a real app's
 launch cost is a useful product property. No paired link study, pre-main timer, binary-size
