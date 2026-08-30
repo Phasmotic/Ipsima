@@ -6,3 +6,6 @@
 *.pdf binary
 *.png binary
 *.zip binary
+
+# Unified-diff context uses a single space to represent a blank context line.
+contributions/nous-research/documentation-corrections.patch -whitespace

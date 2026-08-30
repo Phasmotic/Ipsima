@@ -12,14 +12,24 @@ revise it. Expensive-to-reconstruct findings and evidence belong in the reposito
 or issue rather than only in a conversation. Public evidence must contain repository-relative
 paths only and must exclude local environment details and sensitive data.
 
+### Final project disposition — 2026-08-30
+
+The owner ended Talaria client development after the final upstream-contribution objective. No
+P1.3, P2–P7, Stage 2, or other client work is planned. The phase descriptions below are retained as
+historical design records, not an active roadmap. The final objective re-derived the protocol
+catalog at exact live HEAD, reclassified every upstream-facing claim, dropped the replay bug report
+after confirming its upstream fix, and prepared only the surviving documentation corrections and
+MIT catalog offer under `contributions/nous-research`. The owner, not this build agent, decides
+whether and when to file those prepared materials upstream.
+
 Audit repair closed at `96df2d0`. The revised phase plan, pinned-source outbound-hook finding,
 and pre-code push architecture are now recorded in this brief, `docs/PROTOCOL.md`, and
-[ADR-0001](adr/0001-contentless-approval-push.md). P1 implementation has not begun and is outside
-this run.
+[ADR-0001](adr/0001-contentless-approval-push.md). At that checkpoint, P1 implementation had not
+begun and remained outside the audit-repair run.
 
 [ADR-0002](adr/0002-source-bound-pull-request-gauntlet.md) records the accepted two-stage PR
 verification architecture. Only advisory Stage 1 Linux G1–G5 is implemented now. Stage 2 and P1
-remain outside this run.
+remained outside that Stage 1 run; Stage 2 was never implemented.
 
 ### Coordination record
 

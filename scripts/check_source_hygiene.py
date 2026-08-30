@@ -95,6 +95,9 @@ PUBLIC_HTTPS_ALLOWANCES = {
     "protocol/methods.json": frozenset(
         {_secure_url("github.com/NousResearch/hermes-agent.git")}
     ),
+    "protocol/methods-26350357.json": frozenset(
+        {_secure_url("github.com/NousResearch/hermes-agent.git")}
+    ),
     "scripts/derive_protocol.py": frozenset(
         {_secure_url("github.com/NousResearch/hermes-agent.git")}
     ),

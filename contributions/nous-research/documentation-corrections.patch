@@ -1,0 +1,150 @@
+diff --git a/apps/shared/src/json-rpc-gateway.ts b/apps/shared/src/json-rpc-gateway.ts
+--- a/apps/shared/src/json-rpc-gateway.ts
++++ b/apps/shared/src/json-rpc-gateway.ts
+@@ -108,7 +108,7 @@ export class JsonRpcGatewayClient {
+   private heartbeatTimer: ReturnType<typeof setInterval> | null = null
+   private heartbeatSequence = 0
+   private lastInboundAt = 0
+-  /** Last observed event seq per session_id — drives lossless reconnect replay. */
++  /** Last observed event seq per session_id — drives bounded best-effort reconnect replay. */
+   private lastSeenSeq = new Map<string, number>()
+   /** Set while a post-reconnect replay fetch is in flight (dedup guard). */
+   private replayInFlight = false
+diff --git a/agent/outbound_webhooks.py b/agent/outbound_webhooks.py
+--- a/agent/outbound_webhooks.py
++++ b/agent/outbound_webhooks.py
+@@ -407,9 +407,10 @@ def _serialize_payload(
+     """Render the POST body.  Same top-level shape as shell hooks' stdin
+     (documented in :mod:`agent.shell_hooks`), plus delivery metadata.
+ 
+-    ``delivery_id`` is shared with the ``X-Hermes-Delivery`` header so
+-    receivers can dedupe on either — and since it (plus ``timestamp``)
+-    lives inside the HMAC-signed body, it doubles as replay protection.
++    When signed, ``delivery_id`` and ``timestamp`` give receivers
++    authenticated inputs for deduplication and freshness checks. Receivers
++    must enforce both and must compare the unsigned event and delivery
++    headers with their signed body values.
+     """
+     extras = {k: v for k, v in kwargs.items() if k not in _TOP_LEVEL_PAYLOAD_KEYS}
+     try:
+diff --git a/tui_gateway/event_replay.py b/tui_gateway/event_replay.py
+--- a/tui_gateway/event_replay.py
++++ b/tui_gateway/event_replay.py
+@@ -3,8 +3,10 @@
+ Every gateway event frame that flows through :func:`server.write_json` (and
+ therefore ``_emit``) is stamped with a per-session monotonic ``seq`` and
+ appended to a small ring buffer keyed by session id. A reconnecting client
+-calls the ``session.events.since`` RPC with its last observed seq; the server
+-replays everything newer from the buffer, then live events resume seamlessly.
++calls the ``session.events.since`` RPC with its last observed seq; the server
++returns newer events that remain in the bounded buffer, then live delivery
++continues. Clients must reconcile authoritative history when the ring is
++truncated, absent, or otherwise cannot prove a complete gap recovery.
+ 
+ Design constraints honored:
+ - stdio TUI path unaffected: frames gain a ``seq`` field only on event frames;
+diff --git a/tui_gateway/server.py b/tui_gateway/server.py
+--- a/tui_gateway/server.py
++++ b/tui_gateway/server.py
+@@ -2489,9 +2489,9 @@ def write_json(obj: dict) -> bool:
+        behaviour and keeping tests that monkey-patch ``_real_stdout`` green.
+ 
+     Every routed event frame is stamped with a per-session monotonic
+     ``seq`` and recorded in the bounded replay ring (tui_gateway.event_replay)
+-    so a WS client can resume losslessly after a reconnect via
+-    ``session.events.since``.
++    so a WS client can request best-effort recovery of retained events after a
++    reconnect via ``session.events.since``.
+     """
+     if obj.get("method") == "event":
+         params = obj.get("params")
+diff --git a/tui_gateway/ws.py b/tui_gateway/ws.py
+--- a/tui_gateway/ws.py
++++ b/tui_gateway/ws.py
+@@ -7,9 +7,10 @@ web client over WebSocket.
+ 
+ Wire protocol
+ -------------
+-Identical to stdio: newline-delimited JSON-RPC in both directions. The server
+-emits a ``gateway.ready`` event immediately after connection accept, then
+-echoes responses/events for inbound requests. No framing differences.
++The JSON-RPC schema matches stdio, but framing differs: each WebSocket text
++message carries one JSON-RPC object, while stdio uses newline-delimited JSON.
++The server emits a ``gateway.ready`` event immediately after connection
++accept, then sends responses/events as individual text messages.
+ 
+ Mounting
+ --------
+diff --git a/web/src/lib/gatewayClient.ts b/web/src/lib/gatewayClient.ts
+--- a/web/src/lib/gatewayClient.ts
++++ b/web/src/lib/gatewayClient.ts
+@@ -1,10 +1,10 @@
+ /**
+  * Browser WebSocket client for the tui_gateway JSON-RPC protocol.
+  *
+- * Speaks the exact same newline-delimited JSON-RPC dialect that the Ink TUI
+- * drives over stdio. The server-side transport abstraction
+- * (tui_gateway/transport.py + ws.py) routes the same dispatcher's writes
+- * onto either stdout or a WebSocket depending on how the client connected.
++ * Speaks the same JSON-RPC schema that the Ink TUI drives over stdio, with
++ * transport-specific framing: each WebSocket text message carries one object,
++ * while stdio is newline-delimited. The server transport abstraction routes
++ * the same dispatcher's writes onto the appropriate connection.
+  *
+  *   const gw = new GatewayClient()
+  *   await gw.connect()
+diff --git a/website/docs/developer-guide/programmatic-integration.md b/website/docs/developer-guide/programmatic-integration.md
+--- a/website/docs/developer-guide/programmatic-integration.md
++++ b/website/docs/developer-guide/programmatic-integration.md
+@@ -37,6 +37,8 @@ hermes acp --setup          # interactive provider/model setup for ACP terminal auth
+ 
+ `tui_gateway/server.py` is the protocol the Ink TUI (`hermes --tui`) and the embedded dashboard PTY bridge talk to. Any external host can speak the same protocol over stdio (or WebSocket via `tui_gateway/ws.py`).
+ 
++Stdio uses newline-delimited JSON. Each WebSocket text message instead carries one complete JSON-RPC object; do not split or join WebSocket messages on newlines.
++
+ ### Method catalog (selected)
+ 
+ ```
+@@ -74,7 +76,7 @@ On a successful truncating submit against a durable session, the `prompt.submit`
+ 
+ ### Events streamed back
+ 
+-`message.delta`, `message.complete`, `tool.start`, `tool.progress`, `tool.complete`, `approval.request`, `clarify.request`, `sudo.request`, `sudo.expire`, `secret.request`, `secret.expire`, `gateway.ready`, plus session lifecycle and error events. Expiry events carry the original `{ request_id }`; external hosts should clear only the matching pending prompt.
++`message.delta`, `message.complete`, `tool.start`, `tool.generating`, `tool.output_risk`, `tool.complete`, `approval.request`, `clarify.request`, `sudo.request`, `sudo.expire`, `secret.request`, `secret.expire`, `gateway.ready`, plus session lifecycle and error events. The separate REST/SSE API emits `hermes.tool.progress`; the current Python TUI gateway instead emits `tool.generating` and `tool.output_risk` and has no `tool.progress` producer. Expiry events carry the original `{ request_id }`; external hosts should clear only the matching pending prompt.
+ 
+ ### Pi-style RPC mapping
+ 
+diff --git a/website/docs/user-guide/features/hooks.md b/website/docs/user-guide/features/hooks.md
+--- a/website/docs/user-guide/features/hooks.md
++++ b/website/docs/user-guide/features/hooks.md
+@@ -1891,10 +1891,17 @@ Each firing POSTs a JSON body with the same top-level shape as shell hooks' stdin
+ }
+ ```
+ 
++For `pre_approval_request`, the ordinary gateway approval path places its
++approval context under `extra`, but does not include the approval queue's
++`request_id`. Treat that webhook as a notification: reconnect and reattach or
++resume the relevant session (using `extra.session_key` when necessary), call
++`approval.pending` for the authoritative pending record and `request_id`, and
++only then call `approval.respond`.
++
+ Headers:
+ 
+ | Header | Value |
+ |--------|-------|
+ | `Content-Type` | `application/json` |
+ | `X-Hermes-Event` | The hook event name |
+ | `X-Hermes-Delivery` | Unique id per delivery — same value as `delivery_id` in the body |
+@@ -1910,9 +1917,10 @@ def verify(body: bytes, header: str, secret: str) -> bool:
+     return hmac.compare_digest(expected, header)
+ ```
+ 
+-Because `delivery_id` and `timestamp` live **inside the signed body**, a verified receiver also gets replay protection for free:
++Because `delivery_id` and `timestamp` live **inside the signed body**, a verified receiver has authenticated inputs with which to implement replay protection. Replay protection is not automatic; the receiver must:
+ 
+-- **Dedupe** on `delivery_id` (or the matching `X-Hermes-Delivery` header) — remember recently seen ids and skip duplicates. Hermes retries failed deliveries once, so the same id can legitimately arrive twice.
++- **Match the headers to the signed body** — require `X-Hermes-Event` to equal the authenticated body's `hook_event_name` and `X-Hermes-Delivery` to equal its `delivery_id`; the HMAC covers the body, not the headers.
++- **Dedupe** on the signed body's `delivery_id` — remember recently seen ids and skip duplicates. Hermes retries failed deliveries once, so the same id can legitimately arrive twice.
+ - **Reject stale events** by checking `timestamp` against your clock with a tolerance window (5 minutes is the common default). An attacker replaying a captured request can't forge a fresh timestamp without the secret.
+ 
+ ### Delivery semantics

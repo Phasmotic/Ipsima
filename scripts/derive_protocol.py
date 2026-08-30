@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import datetime
 import hashlib
 import json
 import os
@@ -202,8 +203,12 @@ def derive_catalog(
     files: Mapping[str, SourceFile],
     *,
     expected_counts: tuple[int, int, int] | None = EXPECTED_COUNTS,
+    source_commit: str = SOURCE_COMMIT,
+    derived_at: str = DERIVED_AT,
 ) -> dict[str, object]:
     """Derive and validate the catalog from a complete pinned source snapshot."""
+    _validate_revision(source_commit)
+    _validate_derived_at(derived_at)
     _require_inputs(files)
     _validate_contract_facts(files)
 
@@ -273,7 +278,7 @@ def derive_catalog(
         "title": "Hermes tui_gateway + api_server protocol catalog",
         "source": {
             "repository": SOURCE_REPOSITORY,
-            "commit": SOURCE_COMMIT,
+            "commit": source_commit,
             "inputs": manifest,
         },
         "derived_from": [
@@ -282,7 +287,7 @@ def derive_catalog(
             "hermes_cli/dashboard_auth/ws_tickets.py",
             "hermes_cli/web_server.py",
         ],
-        "derived_at": DERIVED_AT,
+        "derived_at": derived_at,
         "source_note": (
             "Derived exclusively from pinned Git objects; mutable checkout "
             "content is ignored. Source wins over docs."
@@ -397,9 +402,48 @@ def run(
     output: pathlib.Path,
     *,
     check: bool,
+    revision: str = SOURCE_COMMIT,
+    expected_counts: tuple[int, int, int] | None = None,
+    derived_at: str | None = None,
 ) -> int:
-    files = GitObjectSource(source_root).snapshot()
-    catalog = derive_catalog(files)
+    _validate_revision(revision)
+    default_output = pathlib.Path(__file__).resolve().parent.parent / "protocol" / "methods.json"
+    is_default_output = output.resolve() == default_output
+
+    if revision == SOURCE_COMMIT:
+        resolved_counts = EXPECTED_COUNTS if expected_counts is None else expected_counts
+        resolved_date = DERIVED_AT if derived_at is None else derived_at
+    else:
+        if is_default_output:
+            raise DerivationBlocked(
+                "an alternate Hermes revision requires an explicit non-default output"
+            )
+        if derived_at is None or expected_counts is None:
+            raise DerivationBlocked(
+                "an alternate Hermes revision requires explicit derived-at and expected counts"
+            )
+        resolved_counts = expected_counts
+        resolved_date = derived_at
+
+    _validate_derived_at(resolved_date)
+    if any(count < 0 for count in resolved_counts):
+        raise DerivationBlocked("expected catalog counts must be nonnegative")
+    if is_default_output and (
+        revision != SOURCE_COMMIT
+        or resolved_date != DERIVED_AT
+        or resolved_counts != EXPECTED_COUNTS
+    ):
+        raise DerivationBlocked(
+            "the default catalog requires the complete pinned provenance profile"
+        )
+
+    files = GitObjectSource(source_root, revision=revision).snapshot()
+    catalog = derive_catalog(
+        files,
+        expected_counts=resolved_counts,
+        source_commit=revision,
+        derived_at=resolved_date,
+    )
     content = catalog_bytes(catalog)
     counts = (
         len(catalog["requests"]),
@@ -459,6 +503,24 @@ def _require_inputs(files: Mapping[str, SourceFile]) -> None:
             "source snapshot contains undeclared inputs: "
             + ", ".join(sorted(unexpected))
         )
+
+
+def _validate_revision(revision: str) -> None:
+    if re.fullmatch(r"[0-9a-f]{40}", revision) is None:
+        raise DerivationBlocked(
+            "Hermes revision must be a full lowercase 40-hex commit SHA"
+        )
+
+
+def _validate_derived_at(value: str) -> None:
+    try:
+        parsed = datetime.date.fromisoformat(value)
+    except ValueError as error:
+        raise DerivationBlocked(
+            "derived-at must be an ISO-8601 calendar date"
+        ) from error
+    if parsed.isoformat() != value:
+        raise DerivationBlocked("derived-at must be an ISO-8601 calendar date")
 
 
 def _validate_contract_facts(files: Mapping[str, SourceFile]) -> None:
@@ -613,6 +675,31 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="compare exact bytes without modifying the output",
     )
+    parser.add_argument(
+        "--revision",
+        default=SOURCE_COMMIT,
+        help=(
+            "full immutable Hermes commit SHA; a non-default revision requires "
+            "an explicit non-default --output"
+        ),
+    )
+    parser.add_argument(
+        "--derived-at",
+        help=(
+            "deterministic ISO-8601 catalog derivation date; required for an "
+            "alternate revision"
+        ),
+    )
+    parser.add_argument(
+        "--expected-counts",
+        nargs=3,
+        type=int,
+        metavar=("REQUESTS", "EVENTS", "REST"),
+        help=(
+            "exact request, event, and REST count ratchet; required for an "
+            "alternate revision"
+        ),
+    )
     return parser
 
 
@@ -623,6 +710,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             arguments.source_root.expanduser(),
             arguments.output,
             check=arguments.check,
+            revision=arguments.revision,
+            expected_counts=(
+                None
+                if arguments.expected_counts is None
+                else tuple(arguments.expected_counts)
+            ),
+            derived_at=arguments.derived_at,
         )
     except DerivationBlocked as error:
         print(f"derivation blocked: {error}", file=sys.stderr)

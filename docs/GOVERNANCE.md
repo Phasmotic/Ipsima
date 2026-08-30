@@ -1,5 +1,10 @@
 # Talaria governance
 
+> **Final disposition (2026-08-30):** Talaria client development ended after the final
+> upstream-contribution objective. No P1.3, P2–P7, or Stage 2 work is planned. The rules below
+> remain the verification record for the existing source and prepared contribution artifacts;
+> dormant arm points are historical and will not be pursued by this project.
+
 ## Phase plan boundaries
 
 The phase plan is ordered and condition-gated. Renumbering a phase does not change a gate's arm
