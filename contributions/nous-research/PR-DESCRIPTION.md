@@ -21,8 +21,8 @@ development has stopped, but the protocol work is what turned these up.
 
 Every change is a comment, docstring, or `website/docs` edit — **no behavioural change, no API
 change, no test change.** Each correction cites the source that establishes it, so it can be
-checked without trusting this description. Verified against
-`26350357d76e4508c8df9304a3374bdc5a6f6220`.
+checked without trusting this description. Verified against `4f22543509d1b91dc45bcb369447126c5eb14fb7`, the base of this branch; every
+line reference below is relative to it.
 
 **1. WebSocket framing is described as newline-delimited; it is not.**
 `tui_gateway/ws.py:10-12` states the wire protocol is "Identical to stdio: newline-delimited
@@ -39,8 +39,8 @@ message returns `-32700`, because the server calls `json.loads` on the whole mes
 **2. The documented TUI event list names an event the TUI gateway never emits.**
 `website/docs/developer-guide/programmatic-integration.md:75-77` lists `tool.progress` among
 events streamed back. There is no `tool.progress` producer anywhere in `tui_gateway/`. The gateway
-emits `tool.generating` (`tui_gateway/server.py:8082`) and `tool.output_risk`
-(`tui_gateway/server.py:7854`), both conditional. The name is not fictional — the separate REST/SSE
+emits `tool.generating` (`tui_gateway/server.py:8106`) and `tool.output_risk`
+(`tui_gateway/server.py:7878`), both conditional. The name is not fictional — the separate REST/SSE
 API does emit `tool.progress` (`gateway/platforms/api_server.py:4826-4830,4961`) and
 `hermes.tool.progress` (`gateway/platforms/api_server.py:5213,5449,5455`) — so the list appears to
 have crossed the two surfaces. The patch corrects the list and states the distinction explicitly
@@ -71,10 +71,10 @@ opening the diff:
 
 **4. The `pre_approval_request` webhook lacks the field a responder needs.**
 The ordinary gateway approval path puts approval context under `extra` but omits the approval
-queue's `request_id` (`tools/approval.py:4518-4540`; `tui_gateway/methods_prompt.py:1659-1668`). A
+queue's `request_id` (`tools/approval.py:4606-4616`; `tui_gateway/methods_prompt.py:1659-1668`). A
 consumer cannot answer *that* approval from the webhook payload alone: with no `request_id`,
 `approval.respond` resolves the session's oldest pending approval
-(`tools/approval.py:2846-2859`), which is the right one only when exactly one is queued. The patch
+(`tools/approval.py:2865-2895`), which is the right one only when exactly one is queued. The patch
 documents treating the webhook as a notification and calling `approval.pending` for the
 authoritative record first.
 
@@ -118,8 +118,7 @@ Documentation:
 
 ## How to Test
 
-1. `git apply --check --whitespace=error` the patch — it applies clean at the verification commit
-   and at current `main`.
+1. The branch is based on current `main` (`4f22543`) and needs no rebase.
 2. Spot-check any citation above against your own tree; each names a file and line range.
 3. `grep -rn "tool\.progress" tui_gateway/` returns nothing, which is correction 2 in one command.
 4. Nothing to run: no executable line changes, so behaviour and tests are untouched.
