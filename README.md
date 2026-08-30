@@ -16,6 +16,9 @@ An unfinished native **iOS + watchOS client experiment for
 >
 > No releases, no TestFlight, and no distribution. The repository remains available as an
 > MIT-licensed protocol, verification, and transport reference.
+>
+> What is offered upstream is five documentation corrections — see
+> [Contributing and upstreaming](#contributing-and-upstreaming).
 
 ## Why this exists
 
@@ -52,6 +55,9 @@ G3 separately generates 224 kind-aware Swift conformance tests twice in isolated
 directories and requires byte-identical output matching the committed suite. The catalog is an
 identity and provenance contract, not a complete schema for every payload.
 
+See [docs/PROTOCOL.md](docs/PROTOCOL.md) for the pinned commit, the committed catalog's SHA-256,
+and the `--check` regeneration command.
+
 Source wins over prose. That rule corrected Ipsima's own earlier framing claim: each WebSocket
 text message carries one JSON-RPC object, while newline framing is used only for stdio. The
 reviewed contract and its provenance are recorded in [docs/PROTOCOL.md](docs/PROTOCOL.md).
@@ -79,6 +85,12 @@ prepared documentation corrections, and offer of the derived catalog are retaine
 [`contributions/nous-research`](contributions/nous-research). These are prepared materials for the
 owner to file, not a claim of Nous Research endorsement.
 
+Every upstream-facing claim was re-derived and re-verified against Hermes HEAD
+`26350357d76e4508c8df9304a3374bdc5a6f6220` on 2026-08-30, not against the pinned commit this
+repository builds on: 8 claims were dropped as stale and 2 were withdrawn as our own errors. What
+remains is five documentation and comment corrections across 8 files, +32/−18, with no behaviour,
+API, or test change.
+
 No further Ipsima client development is planned. The gate policy in
 [governance](docs/GOVERNANCE.md) remains the record of how the existing work was verified.
 
@@ -94,7 +106,7 @@ Packages/HermesKit/    Pure-Swift SwiftPM package: codec, WebSocket transport, a
                        P1 models, state machines, REST/SSE fallback, and recovery were planned
                        here and never built.
                        Zero Apple-only framework imports; builds and tests on Linux.
-App/                   Thin SwiftUI shells: Ipsima (iOS), TalariaWidgets, TalariaWatch,
+App/                   Thin SwiftUI shells: Talaria (iOS), TalariaWidgets, TalariaWatch,
                        TalariaWatchWidgets
 protocol/methods.json  Machine-readable method/event catalog (derived from Hermes source)
 Packages/HermesKit/Tests/HermesKitTests/Fixtures/
@@ -103,6 +115,12 @@ scripts/gauntlet.ps1   PowerShell → WSL entry for Tier A; -TierB dispatches ma
 scripts/gauntlet.sh    Internal native-Linux gate runner invoked by gauntlet.ps1
 .github/workflows/     SHA-pinned advisory PR Linux core/caller; manual authoritative Tier B
 ```
+
+Renamed Talaria → Ipsima on 2026-08-30. Public prose uses Ipsima; the Xcode targets, bundle IDs,
+`App/` and `Tests/Talaria*` directories, CI scheme names, and the ADR-0001 domain-separation
+string keep the old name deliberately. Renaming them on a stopped project is churn, and the
+domain string is version-pinned by design, so changing it would be a semantic break rather than
+a rename.
 
 ## The gauntlet
 

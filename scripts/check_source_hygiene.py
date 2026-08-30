@@ -86,6 +86,18 @@ PUBLIC_HTTPS_ALLOWANCES = {
             )
         }
     ),
+    "contributions/nous-research/README.md": frozenset(
+        {_secure_url("github.com/NousResearch/hermes-agent")}
+    ),
+    "contributions/nous-research/PR-DESCRIPTION.md": frozenset(
+        {
+            _secure_url("github.com/Phasmotic/Ipsima"),
+            _secure_url(
+                "github.com/Phasmotic/Ipsima/blob/main"
+                "/contributions/nous-research/HEAD-REVERIFICATION.md"
+            ),
+        }
+    ),
     "README.md": frozenset(
         {
             _secure_url("github.com/NousResearch/hermes-agent"),
