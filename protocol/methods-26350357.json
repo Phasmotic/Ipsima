@@ -1490,6 +1490,12 @@
       ]
     },
     {
+      "name": "session.reclaimed",
+      "emitted_at": [
+        "server.py:1075"
+      ]
+    },
+    {
       "name": "session.resume_progress",
       "emitted_at": [
         "server.py:10536",
@@ -1507,6 +1513,13 @@
       "name": "session.usage",
       "emitted_at": [
         "server.py:12539"
+      ]
+    },
+    {
+      "name": "skin.changed",
+      "emitted_at": [
+        "server.py:14606",
+        "server.py:4843"
       ]
     },
     {
@@ -1604,6 +1617,29 @@
       "name": "tour.request",
       "emitted_at": [
         "server.py:4739"
+      ]
+    },
+    {
+      "name": "voice.interrupted",
+      "emitted_at": [
+        "server.py:16536"
+      ]
+    },
+    {
+      "name": "voice.status",
+      "emitted_at": [
+        "server.py:17303"
+      ]
+    },
+    {
+      "name": "voice.transcript",
+      "emitted_at": [
+        "methods_prompt.py:325",
+        "server.py:16572",
+        "server.py:16574",
+        "server.py:17278",
+        "server.py:17282",
+        "server.py:17299"
       ]
     },
     {

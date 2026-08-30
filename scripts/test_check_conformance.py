@@ -115,8 +115,8 @@ class CheckConformanceTests(unittest.TestCase):
         result = self.run_checker()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("catalog requests: 168", result.stdout)
-        self.assertIn("catalog events  : 56", result.stdout)
-        self.assertIn("generated tests : 224", result.stdout)
+        self.assertIn("catalog events  : 61", result.stdout)
+        self.assertIn("generated tests : 229", result.stdout)
         self.assertEqual(result.stdout.splitlines()[-1], "G3: PASS")
 
     def test_canonical_sanitized_request_event_and_response_pass(self) -> None:
@@ -495,7 +495,7 @@ class ConformanceGeneratorTests(unittest.TestCase):
             cwd=REPO,
         )
 
-    def test_full_catalog_ratchets_224_kind_aware_tests(self) -> None:
+    def test_full_catalog_ratchets_229_kind_aware_tests(self) -> None:
         with tempfile.TemporaryDirectory(prefix="talaria-gen-full-") as temporary:
             output = pathlib.Path(temporary)
             result = self.run_generator(REPO / "protocol" / "methods.json", output)
@@ -507,13 +507,13 @@ class ConformanceGeneratorTests(unittest.TestCase):
             event_source = (output / OUTPUT_NAMES[-1]).read_text(encoding="utf-8")
             request_count = request_source.count("    func testM_")
             event_count = event_source.count("    func testE_")
-            self.assertEqual((request_count, event_count), (168, 56))
-            self.assertEqual(request_count + event_count, 224)
+            self.assertEqual((request_count, event_count), (168, 61))
+            self.assertEqual(request_count + event_count, 229)
             for stem in ("SessionTitle", "SessionUsage"):
                 self.assertIn(f"testM_{stem}", request_source)
                 self.assertIn(f"testE_{stem}", event_source)
             self.assertNotIn('assertRoundTrip("event"', event_source)
-            self.assertEqual(event_source.count("try self.assertEventRoundTrip("), 56)
+            self.assertEqual(event_source.count("try self.assertEventRoundTrip("), 61)
 
     def test_two_directories_and_reordered_catalog_are_byte_identical(self) -> None:
         with tempfile.TemporaryDirectory(prefix="talaria-gen-determinism-") as temporary:

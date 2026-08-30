@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
 """Tests for pinned, deterministic protocol derivation."""
 from __future__ import annotations
 
@@ -6,6 +7,7 @@ import contextlib
 import hashlib
 import io
 import json
+import os
 import pathlib
 import subprocess
 import tempfile
@@ -163,7 +165,7 @@ class CatalogDerivationTests(unittest.TestCase):
         raw = path.read_bytes()
         self.assertEqual(
             hashlib.sha256(raw).hexdigest(),
-            "8863412ba36e4b518da9aff635312e937d97a7a44c92ebf52c99c1694a15255b",
+            "15f4544c8c8350bc4a47d4195d9a2b45ad6c32fc5b6cf35d610af4dae205a5a2",
         )
         catalog = json.loads(raw)
         self.assertEqual(
@@ -177,13 +179,13 @@ class CatalogDerivationTests(unittest.TestCase):
                 len(catalog["events"]),
                 len(catalog["rest_routes"]),
             ),
-            (170, 58, 42),
+            (170, 63, 42),
         )
         self.assertEqual(raw, derive.catalog_bytes(catalog))
 
     def test_catalog_manifest_hashes_every_declared_input(self) -> None:
         files = _fake_files()
-        catalog = derive.derive_catalog(files, expected_counts=None)
+        catalog = derive.derive_catalog(files, expected_counts=None, source_commit=derive.SOURCE_COMMIT, derived_at=derive.DERIVED_AT)
         self.assertNotIn("$schema", catalog)
         manifest = catalog["source"]["inputs"]
         self.assertEqual(
@@ -217,17 +219,15 @@ class CatalogDerivationTests(unittest.TestCase):
     def test_revision_and_date_must_be_immutable_canonical_values(self) -> None:
         with self.assertRaisesRegex(derive.DerivationBlocked, "full lowercase"):
             derive.derive_catalog(
-                _fake_files(), expected_counts=None, source_commit="HEAD"
-            )
+                _fake_files(), expected_counts=None, source_commit="HEAD", derived_at=derive.DERIVED_AT)
         with self.assertRaisesRegex(derive.DerivationBlocked, "calendar date"):
             derive.derive_catalog(
-                _fake_files(), expected_counts=None, derived_at="2026-02-30"
-            )
+                _fake_files(), expected_counts=None, derived_at="2026-02-30", source_commit=derive.SOURCE_COMMIT)
 
     def test_transport_framing_distinguishes_websocket_messages_from_stdio_lines(
         self,
     ) -> None:
-        catalog = derive.derive_catalog(_fake_files(), expected_counts=None)
+        catalog = derive.derive_catalog(_fake_files(), expected_counts=None, source_commit=derive.SOURCE_COMMIT, derived_at=derive.DERIVED_AT)
         self.assertEqual(
             catalog["framing"]["encoding"],
             "one JSON-RPC 2.0 object per WebSocket text message, both "
@@ -250,7 +250,7 @@ class CatalogDerivationTests(unittest.TestCase):
                 source = files["tui_gateway/ws.py"].text.replace(old, new)
                 files["tui_gateway/ws.py"] = _source("tui_gateway/ws.py", source)
                 with self.assertRaisesRegex(derive.DerivationBlocked, label):
-                    derive.derive_catalog(files, expected_counts=None)
+                    derive.derive_catalog(files, expected_counts=None, source_commit=derive.SOURCE_COMMIT, derived_at=derive.DERIVED_AT)
 
     def test_ticket_lifetime_and_single_use_are_code_proven(self) -> None:
         mutations = (
@@ -263,10 +263,10 @@ class CatalogDerivationTests(unittest.TestCase):
                 path = "hermes_cli/dashboard_auth/ws_tickets.py"
                 files[path] = _source(path, files[path].text.replace(old, new))
                 with self.assertRaisesRegex(derive.DerivationBlocked, label):
-                    derive.derive_catalog(files, expected_counts=None)
+                    derive.derive_catalog(files, expected_counts=None, source_commit=derive.SOURCE_COMMIT, derived_at=derive.DERIVED_AT)
 
     def test_routes_dedupe_by_method_and_path(self) -> None:
-        catalog = derive.derive_catalog(_fake_files(), expected_counts=None)
+        catalog = derive.derive_catalog(_fake_files(), expected_counts=None, source_commit=derive.SOURCE_COMMIT, derived_at=derive.DERIVED_AT)
         self.assertEqual(
             catalog["rest_routes"],
             [
@@ -281,7 +281,7 @@ class CatalogDerivationTests(unittest.TestCase):
         )
 
     def test_direct_gateway_ready_locations_are_real_source_lines(self) -> None:
-        catalog = derive.derive_catalog(_fake_files(), expected_counts=None)
+        catalog = derive.derive_catalog(_fake_files(), expected_counts=None, source_commit=derive.SOURCE_COMMIT, derived_at=derive.DERIVED_AT)
         ready = next(
             event for event in catalog["events"]
             if event["name"] == "gateway.ready"
@@ -295,7 +295,7 @@ class CatalogDerivationTests(unittest.TestCase):
         files = _fake_files()
         del files["hermes_cli/web_server.py"]
         with self.assertRaisesRegex(derive.DerivationBlocked, "missing required"):
-            derive.derive_catalog(files, expected_counts=None)
+            derive.derive_catalog(files, expected_counts=None, source_commit=derive.SOURCE_COMMIT, derived_at=derive.DERIVED_AT)
 
     def test_unproved_hardcoded_fact_blocks(self) -> None:
         files = _fake_files()
@@ -306,14 +306,14 @@ class CatalogDerivationTests(unittest.TestCase):
             "hermes_cli/web_server.py", web
         )
         with self.assertRaisesRegex(derive.DerivationBlocked, "ticket consumption"):
-            derive.derive_catalog(files, expected_counts=None)
+            derive.derive_catalog(files, expected_counts=None, source_commit=derive.SOURCE_COMMIT, derived_at=derive.DERIVED_AT)
 
     def test_count_contract_blocks_extractor_drift(self) -> None:
         with self.assertRaisesRegex(derive.DerivationBlocked, "counts disagree"):
-            derive.derive_catalog(_fake_files(), expected_counts=(999, 999, 999))
+            derive.derive_catalog(_fake_files(), expected_counts=(999, 999, 999), source_commit=derive.SOURCE_COMMIT, derived_at=derive.DERIVED_AT)
 
     def test_canonical_bytes_are_deterministic_utf8_lf(self) -> None:
-        catalog = derive.derive_catalog(_fake_files(), expected_counts=None)
+        catalog = derive.derive_catalog(_fake_files(), expected_counts=None, source_commit=derive.SOURCE_COMMIT, derived_at=derive.DERIVED_AT)
         first = derive.catalog_bytes(catalog)
         second = derive.catalog_bytes(catalog)
         self.assertEqual(first, second)
@@ -457,11 +457,17 @@ class GitObjectSourceTests(unittest.TestCase):
 
 class OutputContractTests(unittest.TestCase):
     def test_alternate_revision_cannot_replace_the_pinned_default_catalog(self) -> None:
+        # Off the pin, --output now defaults to nothing and the run reports
+        # rather than writes, so the danger is naming the pinned catalog
+        # explicitly. That must still be refused before any Git access.
+        pinned = REPO / "protocol" / "methods.json"
         error = io.StringIO()
         with contextlib.redirect_stderr(error):
-            status = derive.main([".", "--revision", "a" * 40])
+            status = derive.main(
+                [".", "--revision", "a" * 40, "--output", str(pinned)]
+            )
         self.assertEqual(status, 2)
-        self.assertIn("explicit non-default output", error.getvalue())
+        self.assertIn("complete pinned provenance profile", error.getvalue())
 
     def test_default_catalog_rejects_changed_provenance_profile(self) -> None:
         cases = (
@@ -476,32 +482,24 @@ class OutputContractTests(unittest.TestCase):
                 self.assertEqual(status, 2)
                 self.assertIn("complete pinned provenance profile", error.getvalue())
 
-    def test_alternate_revision_requires_explicit_date_and_counts(self) -> None:
-        with _temporary_directory() as temporary:
-            output = pathlib.Path(temporary) / "alternate.json"
-            cases = (
-                ["--derived-at", "2026-08-30"],
-                ["--expected-counts", "170", "58", "42"],
-            )
-            for arguments in cases:
-                with self.subTest(arguments=arguments):
-                    error = io.StringIO()
-                    with contextlib.redirect_stderr(error):
-                        status = derive.main(
-                            [
-                                ".",
-                                "--revision",
-                                "a" * 40,
-                                "--output",
-                                str(output),
-                                *arguments,
-                            ]
-                        )
-                    self.assertEqual(status, 2)
-                    self.assertIn(
-                        "explicit derived-at and expected counts", error.getvalue()
+    def test_alternate_revision_does_not_demand_date_or_counts(self) -> None:
+        """Deriving another revision must not require a ratchet or a date.
+
+        Upstream adding a method is normal, so an exact-count ratchet is a
+        downstream-consumer policy rather than a precondition. Reaching the
+        Git layer at all proves the old ceremony no longer gates the run.
+        """
+        for arguments in ([], ["--derived-at", "2026-08-30"]):
+            with self.subTest(arguments=arguments):
+                error = io.StringIO()
+                with contextlib.redirect_stderr(error):
+                    status = derive.main(
+                        [".", "--revision", "b" * 40, *arguments]
                     )
-                    self.assertFalse(output.exists())
+                self.assertEqual(status, 2)
+                message = error.getvalue()
+                self.assertNotIn("requires explicit", message)
+                self.assertNotIn("non-default output", message)
 
     def test_atomic_write_replaces_and_leaves_no_temporary_file(self) -> None:
         with _temporary_directory() as temporary:
@@ -573,6 +571,45 @@ class OutputContractTests(unittest.TestCase):
         self.assertEqual(status, 2)
         self.assertIn("unexpected RuntimeError", error.getvalue())
         self.assertNotIn("sensitive", error.getvalue())
+
+
+class RealSourceExtractionTests(unittest.TestCase):
+    """Run the extractor against a real Hermes checkout.
+
+    The unit tests above all feed synthetic fixtures, so an extractor that
+    silently missed a real emit wrapper stayed green for the life of the
+    project: ``_voice_emit`` has no word boundary before ``_emit`` and
+    ``_broadcast_global_event`` shares no substring with it, so five
+    client-visible events were absent from the catalog. Set HERMES_CHECKOUT to
+    a Hermes clone to exercise the real thing.
+    """
+
+    CHECKOUT = os.environ.get("HERMES_CHECKOUT", "")
+
+    @unittest.skipUnless(CHECKOUT, "set HERMES_CHECKOUT to a Hermes clone")
+    def test_events_reached_through_named_wrappers_are_catalogued(self) -> None:
+        source = derive.GitObjectSource(
+            pathlib.Path(self.CHECKOUT), revision=derive.SOURCE_COMMIT
+        )
+        catalog = derive.derive_catalog(
+            source.snapshot(),
+            expected_counts=None,
+            source_commit=derive.SOURCE_COMMIT,
+            derived_at=derive.DERIVED_AT,
+        )
+        events = {entry["name"] for entry in catalog["events"]}
+        # _broadcast_global_event and _voice_emit, neither of which the
+        # original ``(?:_emit|emit)\(`` pattern could match.
+        for name in (
+            "skin.changed",
+            "session.reclaimed",
+            "voice.status",
+            "voice.transcript",
+            "voice.interrupted",
+        ):
+            self.assertIn(name, events, f"{name} is emitted but not catalogued")
+        self.assertIn("gateway.ready", events)
+        self.assertEqual(len(catalog["rest_routes"]), 42)
 
 
 if __name__ == "__main__":

@@ -11,16 +11,33 @@ It compares the original pinned Hermes commit
 `26350357d76e4508c8df9304a3374bdc5a6f6220` on 2026-08-30. Source wins over
 documentation throughout.
 
+## Extractor correction, 2026-08-30
+
+Both catalogs below were regenerated after we found a defect in our own extractor. It matched
+event names only at `_emit(` call sites, so it could not see two real wrappers in
+`tui_gateway/server.py` — `_voice_emit(` has no word boundary before `_emit`, and
+`_broadcast_global_event(` shares no substring with it. Five client-visible events were therefore
+absent from every catalog we had produced: `skin.changed`, `session.reclaimed`, `voice.status`,
+`voice.transcript`, and `voice.interrupted`.
+
+The pattern now matches any callee whose name contains `emit` or `broadcast`, which recovers all
+five with no losses and no false positives. Event counts consequently rise by five at both
+revisions: the pin from 56 to 61, and HEAD from 58 to 63. Request and REST counts are unaffected.
+
+The gap survived 32 passing tests because none of them ran the extractor against real Hermes
+source; a regression test that does now exists. Remaining known limits — events dispatched through
+a variable, and the `subagent.*` family — are documented in `scripts/PROTOCOL_CATALOG.md`.
+
 ## Reproducible catalog delta
 
 The original catalog remains `protocol/methods.json`. The second, independently derived catalog
 is `protocol/methods-26350357.json`, whose SHA-256 is
-`8863412ba36e4b518da9aff635312e937d97a7a44c92ebf52c99c1694a15255b`.
+`15f4544c8c8350bc4a47d4195d9a2b45ad6c32fc5b6cf35d610af4dae205a5a2`.
 
 | Surface | Original pin | HEAD | Semantic delta |
 | --- | ---: | ---: | --- |
 | JSON-RPC requests | 168 | 170 | Added `mcp.servers.oauth.callback`, `prompt.btw` |
-| Server events | 56 | 58 | Added `btw.complete`, `todo.updated` |
+| Server events | 61 | 63 | Added `btw.complete`, `todo.updated` |
 | REST method/path routes | 42 | 42 | None |
 | Request/event collisions | 2 | 2 | Still `session.title`, `session.usage` |
 | Source inputs | 33 | 33 | Same manifest; 11 blobs changed |
@@ -64,7 +81,7 @@ audit and resolve to no public document; every row is self-contained and cites i
 | 10 | STILL VALID | Gated/public mode accepts ticket or internal credentials and rejects legacy token; loopback compatibility, paired subprotocol parsing, and internal-child credential behavior remain (`hermes_cli/web_server.py:16277-16412,19511-19521`; `hermes_cli/dashboard_auth/ws_tickets.py:110-153`). |
 | 11 | STILL VALID | REST/SSE remains a separate bearer-key API-server listener with no `/api/ws` contract (`gateway/platforms/api_server.py:1511,1920-1973,2247-2277`; `website/docs/user-guide/tui.md:284-290`). |
 | 12a | STILL VALID | Requests and events remain separate namespaces, with only `session.title` and `session.usage` colliding (`tui_gateway/methods_session.py:1310,1710`; `tui_gateway/server.py:12539,12896-12897`). |
-| 12b | STALE | The 168-request, 56-event, and 224-test live-HEAD counts are obsolete. HEAD derives 170 requests and 58 events, hence 228 kind-aware cases. The pinned catalog's old counts remain correct for its own immutable commit. |
+| 12b | STALE | The 168-request, 56-event, and 224-test live-HEAD counts are obsolete. HEAD derives 170 requests and 63 events, hence 233 kind-aware cases. See the extractor-correction note above: the 56 and 58 event counts were themselves understated. |
 | 13 | STILL VALID | Session transport, request-context transport, then stdio precedence and separate sessionless broadcast remain (`tui_gateway/server.py:2478-2508,2522-2565`). |
 | 14 | STILL VALID | Browser-controller notifications still bypass central routing, sequence stamping, and replay while using a standard sessionful event envelope (`tui_gateway/methods_browser_control.py:92-114`). |
 | 15a | STILL VALID | The TUI gateway emits `tool.start`, optional `tool.generating`, optional `tool.output_risk`, and `tool.complete`; it has no `tool.progress` producer (`tui_gateway/server.py:7735-7854,8051-8082`). The TUI event guide's `tool.progress` producer claim is contributably wrong (`website/docs/developer-guide/programmatic-integration.md:75-77`). |
