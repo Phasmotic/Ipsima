@@ -34,9 +34,8 @@ diff --git a/tui_gateway/event_replay.py b/tui_gateway/event_replay.py
  Every gateway event frame that flows through :func:`server.write_json` (and
  therefore ``_emit``) is stamped with a per-session monotonic ``seq`` and
  appended to a small ring buffer keyed by session id. A reconnecting client
--calls the ``session.events.since`` RPC with its last observed seq; the server
+ calls the ``session.events.since`` RPC with its last observed seq; the server
 -replays everything newer from the buffer, then live events resume seamlessly.
-+calls the ``session.events.since`` RPC with its last observed seq; the server
 +returns newer events that remain in the bounded buffer, then live delivery
 +continues. Clients must reconcile authoritative history when the ring is
 +truncated, absent, or otherwise cannot prove a complete gap recovery.

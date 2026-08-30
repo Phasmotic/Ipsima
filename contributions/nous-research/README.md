@@ -8,7 +8,7 @@ ignore. Nothing here claims Nous endorsement.
 
 Five documentation and comment corrections to
 [Hermes Agent](https://github.com/NousResearch/hermes-agent), found while building an external
-client against the `tui_gateway` WebSocket JSON-RPC protocol. Eight files, +32/−18, entirely
+client against the `tui_gateway` WebSocket JSON-RPC protocol. Eight files, +31/−17, entirely
 comments, docstrings, and `website/docs` prose — **no behaviour, API, or test change.** Every
 claim cites a file and line in the Hermes tree so it can be checked without trusting us.
 
