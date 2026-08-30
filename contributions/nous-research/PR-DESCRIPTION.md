@@ -157,4 +157,10 @@ to split this up — correction 3 stands alone if you would rather land the secu
 or to adjust any wording to house style. If you would rather treat correction 4 as a missing field
 than a documented caveat, say so and I will drop that hunk and file it as an issue instead.
 
-I am not developing the client further, but I will answer review comments on this PR.
+I am not developing the client further, but I will answer review comments on this PR, and I am
+happy to keep going on any of it if it is useful to you. The client was paused on a judgement
+about where the effort was best spent, not on losing interest — so if you would want the derived
+protocol catalog and its generator upstream, a native Apple-platform client against
+`tui_gateway`, or simply more corrections of this kind as we find them, say so and I will pick it
+back up. `contributions/nous-research/catalog-offer.md` in the linked repository describes the
+catalog and, more usefully, what adopting it would actually cost you.
