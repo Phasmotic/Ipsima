@@ -58,7 +58,8 @@ treating it as a notification and calling `approval.pending` for the authoritati
 **5. "Lossless" and "seamless" replay wording overstates a bounded ring.**
 Comments in `apps/shared/src/json-rpc-gateway.ts:108`, `tui_gateway/event_replay.py:3-8`, and
 `tui_gateway/server.py:2489-2495` describe reconnect replay as lossless or seamless. The ring is
-bounded at 512 events across 64 sessions with FIFO eviction and is reset by restart
+bounded at 512 events per session across at most 64 remembered sessions, with FIFO session
+eviction, and is reset by restart
 (`tui_gateway/event_replay.py:33-75`). `replay_epoch` correctly identifies a process generation,
 but does not recover evicted or pre-restart events, and an unknown or evicted ring is
 indistinguishable from a session that never emitted one. The patch qualifies the wording as
