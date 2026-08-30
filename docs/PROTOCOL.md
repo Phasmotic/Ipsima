@@ -40,7 +40,7 @@ rechecked against exact Hermes commit
 catalog is `protocol/methods-26350357.json`; its SHA-256 is
 `15f4544c8c8350bc4a47d4195d9a2b45ad6c32fc5b6cf35d610af4dae205a5a2`.
 
-HEAD has 170 requests, 58 events, and the same 42 REST routes. It adds requests
+HEAD has 170 requests, 63 events, and the same 42 REST routes. It adds requests
 `mcp.servers.oauth.callback` and `prompt.btw`, plus events `btw.complete` and `todo.updated`, with
 no removals. The exhaustive classification—including stale replay findings and Ipsima's own
 overbroad `tool.progress` statement—is recorded in
