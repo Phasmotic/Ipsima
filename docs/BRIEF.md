@@ -1,8 +1,8 @@
-# Talaria project brief
+# Ipsima project brief
 
 ## Authority and record
 
-Talaria is maintained in the public `Phasmotic/Talaria` repository. Preserve that exact
+Ipsima is maintained in the public `Phasmotic/Ipsima` repository. Preserve that exact
 capitalization in remotes, workflows, and documentation. The public audit ledger is issue #2.
 Pull request #1 preserved and reviewed the recovered Phase 0 handoff, audit repair, and README
 correction; it merged into `main` at `5a48deb`.
@@ -14,7 +14,7 @@ paths only and must exclude local environment details and sensitive data.
 
 ### Final project disposition — 2026-08-30
 
-The owner ended Talaria client development after the final upstream-contribution objective. No
+The owner ended Ipsima client development after the final upstream-contribution objective. No
 P1.3, P2–P7, Stage 2, or other client work is planned. The phase descriptions below are retained as
 historical design records, not an active roadmap. The final objective re-derived the protocol
 catalog at exact live HEAD, reclassified every upstream-facing claim, dropped the replay bug report
@@ -49,7 +49,7 @@ states exactly when they apply:
 
 ## Product and scope
 
-Talaria is a native SwiftUI iPhone client for Hermes Agent, accompanied by an Apple Watch app and
+Ipsima is a native SwiftUI iPhone client for Hermes Agent, accompanied by an Apple Watch app and
 WidgetKit extensions. Its goal is meaningful mobile parity with the Hermes desktop experience:
 streaming chat, live tool activity, approvals, interruption and steering, session management, and
 the mobile-native surfaces described below. It speaks Hermes' real gateway protocol; it is not an
@@ -57,7 +57,7 @@ SSH terminal wrapper or a thin chat-only client.
 
 The product target is a Hermes mobile client with the onboarding, rendering, resilience, and
 system integration quality expected of leading first-party agent clients. A credible adoption
-path by Nous Research is a design goal. Talaria therefore remains MIT-licensed: the protocol
+path by Nous Research is a design goal. Ipsima therefore remains MIT-licensed: the protocol
 catalog stays mechanically derivable from pinned Hermes source, and the project must remain
 straightforward to incorporate into an MIT upstream and distribute through the App Store.
 
@@ -152,7 +152,7 @@ Hermes and the privacy bridge never handle that device token.
 and contentless APNs contract. The bridge verifies and minimizes the webhook before the hosted
 relay trust boundary. APNs payloads contain only the required background member and an opaque
 session alias; the app wakes and fetches details from the user's gateway over TLS.
-The APNs relay stays outside Hermes because it holds the signing key bound to Talaria's bundle
+The APNs relay stays outside Hermes because it holds the signing key bound to Ipsima's bundle
 identifier, and its protocol never receives command text. P4 implementation remains blocked until
 its operational threat model fixes rate limits, registration expiry, abuse controls, credential
 rotation and recovery, bridge packaging, deletion verification, bound-session coverage, and the
@@ -202,7 +202,7 @@ and Swift 6.3.3. The generated project contains the iOS app, iOS widget extensio
 watch widget extension, `HermesKit`, and their test bundles.
 
 The watch app can run independently at runtime, but it is still distributed inside the iOS app
-bundle. `TalariaWatch` therefore remains an embedded dependency of `Talaria`, and G13 must prove
+bundle. `TalariaWatch` therefore remains an embedded dependency of `Ipsima`, and G13 must prove
 that the unsigned archive contains the watch app and both widget extensions.
 
 ## Sources of truth
@@ -210,7 +210,7 @@ that the unsigned archive contains the watch app and both widget extensions.
 Use the following precedence rather than resolving conflicts by convenience:
 
 1. Explicit current owner or orchestrator decisions revise earlier project instructions.
-2. For Talaria behavior, repository source wins over narrative documentation unless the audit has
+2. For Ipsima behavior, repository source wins over narrative documentation unless the audit has
    identified that source as defective.
 3. For Hermes protocol facts, the pinned upstream Git objects win. The derived
    `protocol/methods.json` catalog is the machine-readable projection of those objects; generators,
@@ -282,7 +282,7 @@ cannot reliably fail for the claimed reason: the retained ten-verdict history ha
 3.0482066832 seconds and six failures, while exact-SHA reruns moved by as much as 1.56285685
 seconds. Every historical pass and failure remains a measurement from that defective instrument;
 none remains a certification. The complete sanitized record is linked from
-[public audit issue #2](https://github.com/Phasmotic/Talaria/issues/2#issuecomment-5457754926).
+[public audit issue #2](https://github.com/Phasmotic/Ipsima/issues/2#issuecomment-5457754926).
 
 Replacement coverage is **DEFERRED to P2**, to be designed alongside the re-arm when a real app's
 launch cost is worth measuring. P1.2 does not run a paired link study, pre-main timer, binary-size

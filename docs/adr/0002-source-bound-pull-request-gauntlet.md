@@ -7,7 +7,7 @@
 
 ## Context
 
-Talaria's authoritative Apple workflow is deliberately `workflow_dispatch`-only. The local
+Ipsima's authoritative Apple workflow is deliberately `workflow_dispatch`-only. The local
 launcher creates a fresh correlation token, dispatches one run for an exact published commit, and
 accepts evidence only from the unique run whose source and dispatch identity both match. Accepting
 merely “some run on the same SHA” would weaken that security property.
@@ -16,7 +16,7 @@ That workflow shape leaves an ordinary pull request with no automatic verificati
 `pull_request` workflow cannot immediately become authoritative: candidate code can change the
 scripts that evaluate it. A green run produced by a candidate-controlled evaluator is useful
 feedback, but it is not trusted phase evidence. Current contributions originate from trusted
-same-repository branches, so Talaria can add that feedback now without misrepresenting its
+same-repository branches, so Ipsima can add that feedback now without misrepresenting its
 authority and can add the attestation boundary when the trust model changes or P1 makes further
 delay expensive.
 
@@ -35,7 +35,7 @@ runner, or cache. Checkout uses the full-SHA-pinned checkout action, `fetch-dept
 
 Before running any file from the candidate checkout, the pinned workflow proves all of these:
 
-- the event is `pull_request` in `Phasmotic/Talaria` on a GitHub-hosted Linux x64 runner;
+- the event is `pull_request` in `Phasmotic/Ipsima` on a GitHub-hosted Linux x64 runner;
 - the environment is Ubuntu 24.04 and is not WSL;
 - the checked-out commit exactly equals GitHub's nominated pull-request merge SHA;
 - the repository is not shallow; and
@@ -109,7 +109,7 @@ defend.
 
 ### Fork posture
 
-Candidate execution uses `pull_request`, a read-only token, and no secrets. Talaria will not use
+Candidate execution uses `pull_request`, a read-only token, and no secrets. Ipsima will not use
 `pull_request_target` to check out or execute a pull-request head. The Stage 2 attestor may receive
 the completed-run event with trusted permissions, but it never executes candidate code.
 

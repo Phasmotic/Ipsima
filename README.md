@@ -1,4 +1,4 @@
-# Talaria
+# Ipsima
 
 An unfinished native **iOS + watchOS client experiment for
 [Hermes Agent](https://github.com/NousResearch/hermes-agent)**, built against the real
@@ -20,7 +20,7 @@ An unfinished native **iOS + watchOS client experiment for
 ## Why this exists
 
 The upstream Hermes Agent repository tracks a native mobile-client request in
-NousResearch/hermes-agent#35966. Talaria's goal is a native Apple-platform client built directly
+NousResearch/hermes-agent#35966. Ipsima's goal is a native Apple-platform client built directly
 against `tui_gateway`, the Hermes surface that carries streaming events, approvals, tool
 activity, sessions, and subagent control—not an SSH terminal wrapper or a chat-only REST
 frontend.
@@ -30,14 +30,14 @@ command in front of you.
 
 ## Designed to run against stock Hermes
 
-For the Hermes commit pinned by Talaria, source review confirms that stock Hermes can send the
+For the Hermes commit pinned by Ipsima, source review confirms that stock Hermes can send the
 observer-only `pre_approval_request` event through a configured `hooks.outbound` target. No Hermes
 fork, source modification, or vendored patch is required for this approval-wakeup path. The
 webhook is a best-effort wake hint; authoritative approval state still comes from the gateway.
 
 Under the planned—but not yet implemented—P4 architecture, the sensitive raw webhook terminates
 at a user-controlled gateway-side privacy bridge. The bridge verifies and minimizes it before
-sending an opaque wake request to a separate Talaria APNs relay. The source chain and trust
+sending an opaque wake request to a separate Ipsima APNs relay. The source chain and trust
 boundary are recorded in the [protocol guide](docs/PROTOCOL.md#outbound-approval-webhook) and
 [ADR-0001](docs/adr/0001-contentless-approval-push.md).
 
@@ -52,7 +52,7 @@ G3 separately generates 224 kind-aware Swift conformance tests twice in isolated
 directories and requires byte-identical output matching the committed suite. The catalog is an
 identity and provenance contract, not a complete schema for every payload.
 
-Source wins over prose. That rule corrected Talaria's own earlier framing claim: each WebSocket
+Source wins over prose. That rule corrected Ipsima's own earlier framing claim: each WebSocket
 text message carries one JSON-RPC object, while newline framing is used only for stdio. The
 reviewed contract and its provenance are recorded in [docs/PROTOCOL.md](docs/PROTOCOL.md).
 
@@ -74,12 +74,12 @@ The full contract, including gate definitions and stop conditions, is in the
 
 ## Contributing and upstreaming
 
-Talaria is MIT-licensed, the same license as Hermes Agent. The final upstream re-verification,
+Ipsima is MIT-licensed, the same license as Hermes Agent. The final upstream re-verification,
 prepared documentation corrections, and offer of the derived catalog are retained under
 [`contributions/nous-research`](contributions/nous-research). These are prepared materials for the
 owner to file, not a claim of Nous Research endorsement.
 
-No further Talaria client development is planned. The gate policy in
+No further Ipsima client development is planned. The gate policy in
 [governance](docs/GOVERNANCE.md) remains the record of how the existing work was verified.
 
 Pull requests into `main` receive the existing advisory GitHub-hosted Ubuntu check for G1–G5. The
@@ -94,7 +94,7 @@ Packages/HermesKit/    Pure-Swift SwiftPM package: codec, WebSocket transport, a
                        P1 models, state machines, REST/SSE fallback, and recovery were planned
                        here and never built.
                        Zero Apple-only framework imports; builds and tests on Linux.
-App/                   Thin SwiftUI shells: Talaria (iOS), TalariaWidgets, TalariaWatch,
+App/                   Thin SwiftUI shells: Ipsima (iOS), TalariaWidgets, TalariaWatch,
                        TalariaWatchWidgets
 protocol/methods.json  Machine-readable method/event catalog (derived from Hermes source)
 Packages/HermesKit/Tests/HermesKitTests/Fixtures/

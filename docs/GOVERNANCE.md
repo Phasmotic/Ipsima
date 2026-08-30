@@ -1,6 +1,6 @@
-# Talaria governance
+# Ipsima governance
 
-> **Final disposition (2026-08-30):** Talaria client development ended after the final
+> **Final disposition (2026-08-30):** Ipsima client development ended after the final
 > upstream-contribution objective. No P1.3, P2–P7, or Stage 2 work is planned. The rules below
 > remain the verification record for the existing source and prepared contribution artifacts;
 > dormant arm points are historical and will not be pursued by this project.
@@ -26,11 +26,11 @@ Stock `hooks.outbound` can subscribe to `pre_approval_request`; `docs/PROTOCOL.m
 source chain, body, HMAC signing, and best-effort delivery semantics. Revalidate those facts on
 every Hermes pin change. No Hermes fork or protocol patch is authorized.
 
-[ADR-0001](adr/0001-contentless-approval-push.md) precedes and governs P4 implementation. Talaria
+[ADR-0001](adr/0001-contentless-approval-push.md) precedes and governs P4 implementation. Ipsima
 sends APNs device tokens directly to the APNs delivery relay, never through Hermes or the
 gateway-side privacy bridge. The bridge receives the sensitive raw webhook inside the user's
 trust boundary, verifies and minimizes it, then sends the hosted relay only the closed ADR schema.
-APNs payloads contain only the required background member and an opaque session alias, Talaria
+APNs payloads contain only the required background member and an opaque session alias, Ipsima
 fetches details from the gateway over TLS, and the hosted relay protocol never receives command
 text.
 
@@ -114,7 +114,7 @@ The retained ten-verdict history has median 3.0482066832 seconds and six failure
 twelve-measurement record restores two successful exact-SHA retries. All historical passes and
 failures remain valid measurements from a defectively specified instrument, and none remains a
 certification. The complete sanitized dataset and conflict-of-interest note are recorded in
-[public audit issue #2](https://github.com/Phasmotic/Talaria/issues/2#issuecomment-5457754926).
+[public audit issue #2](https://github.com/Phasmotic/Ipsima/issues/2#issuecomment-5457754926).
 
 Replacement coverage is deferred to P2, to be designed alongside the re-arm when a real app's
 launch cost is a useful product property. No paired link study, pre-main timer, binary-size
@@ -140,7 +140,7 @@ iteration by platform design, so the former “cold launch” label was not lite
 
 ## Capture and publication safety
 
-Talaria is a public repository. A value that enters a tracked fixture, commit, pull request,
+Ipsima is a public repository. A value that enters a tracked fixture, commit, pull request,
 issue, or other public artifact must therefore be safe for permanent disclosure; later deletion
 does not undo publication.
 
