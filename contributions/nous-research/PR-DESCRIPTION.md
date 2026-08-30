@@ -10,8 +10,10 @@ absent; `HEAD-REVERIFICATION.md` is the evidence base if a maintainer asks for i
 
 ## Summary
 
-Five documentation and comment corrections found while building an external client against the
-`tui_gateway` protocol. Every change is a comment, docstring, or `website/docs` edit — **no
+Five documentation and comment corrections found while building
+[Ipsima](https://github.com/Phasmotic/Ipsima), an unfinished native iOS and watchOS client for
+Hermes, against the `tui_gateway` protocol (tracking your issue #35966). The client is not
+shipping and development has stopped, but the protocol work is what turned these up. Every change is a comment, docstring, or `website/docs` edit — **no
 behavioural change, no API change, no test change.**
 
 Each correction cites the source that establishes it, so it can be checked without trusting this
@@ -52,7 +54,19 @@ rejection. A receiver gets *authenticated inputs* with which to implement replay
 is not the same thing — and the surrounding text offers the unsigned, attacker-controllable
 `X-Hermes-Delivery` header as an equivalent dedupe key. The patch keeps the existing dedupe and
 freshness advice, moves it from "free" to "required", and adds the header-to-signed-body
-comparison step. This is the one correction with a security consequence.
+comparison step. This is the one correction with a security consequence, so the replacement prose
+is worth seeing without opening the diff:
+
+> **Before —** Because `delivery_id` and `timestamp` live **inside the signed body**, a verified
+> receiver also gets replay protection for free:
+>
+> **After —** Because `delivery_id` and `timestamp` live **inside the signed body**, a verified
+> receiver has authenticated inputs with which to implement replay protection. Replay protection
+> is not automatic; the receiver must:
+>
+> - **Match the headers to the signed body** — require `X-Hermes-Event` to equal the authenticated
+>   body's `hook_event_name` and `X-Hermes-Delivery` to equal its `delivery_id`; the HMAC covers
+>   the body, not the headers.
 
 **4. The `pre_approval_request` webhook lacks the field a responder needs.**
 The ordinary gateway approval path puts approval context under `extra` but omits the approval
@@ -78,6 +92,13 @@ re-derived and re-verified against the HEAD above before this was prepared; clai
 stale in between were dropped rather than filed. Two findings were withdrawn as our own errors
 rather than upstream defects.
 
+The SHA above is `main` as of 2026-08-30. The full claim-by-claim record, including everything we
+dropped, is in
+[`HEAD-REVERIFICATION.md`](https://github.com/Phasmotic/Ipsima/blob/main/contributions/nous-research/HEAD-REVERIFICATION.md).
+
 These corrections were prepared with AI assistance and reviewed against source line by line. Happy
 to split this up — correction 3 stands alone if you would rather land the security wording first —
-or to adjust any wording to house style.
+or to adjust any wording to house style. If you would rather treat correction 4 as a missing field
+than a documented caveat, say so and I will drop that hunk and file it as an issue instead.
+
+I am not developing the client further, but I will answer review comments on this PR.

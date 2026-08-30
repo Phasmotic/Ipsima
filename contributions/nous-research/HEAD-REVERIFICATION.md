@@ -1,5 +1,10 @@
 # Hermes HEAD protocol re-verification
 
+**Outcome in one line:** of everything we held, **8 claims were dropped as stale**, **2 were
+withdrawn as our own errors rather than upstream defects**, and **1 prepared bug report was
+killed** because upstream had already fixed it in `beb794123618c997e82791316df643fc61347665`.
+What survived is five documentation corrections.
+
 This is the final source audit used to decide which Ipsima findings are safe to offer upstream.
 It compares the original pinned Hermes commit
 `e3b5512b7b3f6cbcb23ba5fffdc66d5015eca246` with exact upstream HEAD
@@ -42,7 +47,8 @@ contribution only when the evidence also identifies inaccurate or materially inc
 documentation. `STALE` means the assertion was true at the old pin but changed before HEAD.
 `NEVER VALID` means Ipsima stated the claim too broadly or incorrectly even for the old pin.
 Compound prose from `docs/PROTOCOL.md` is split below so every individual claim receives exactly
-one verdict.
+one verdict. The ID numbers are internal bookkeeping carried over from the pre-HEAD
+audit and resolve to no public document; every row is self-contained and cites its own source.
 
 | ID | Verdict | HEAD verification |
 | --- | --- | --- |
