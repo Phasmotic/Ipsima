@@ -44,7 +44,8 @@ conditional. The name is not fictional — the separate REST/SSE API does emit
 (`gateway/platforms/api_server.py:5213,5449,5455`) — so the list appears to have crossed the two
 surfaces. The patch corrects the list and states the distinction
 explicitly rather than deleting the name. Consumers that accept `tool.progress` for compatibility
-are left untouched.
+are left untouched — including `ui-tui/README.md:285`, which tables it with a `{ name, preview }`
+payload as the Ink client's accept-list.
 
 **3. Webhook docs promise replay protection that receivers must actually implement.**
 `hooks.md:1913-1916` says that because `delivery_id` and `timestamp` are inside the signed body, "a
@@ -71,8 +72,11 @@ is worth seeing without opening the diff:
 **4. The `pre_approval_request` webhook lacks the field a responder needs.**
 The ordinary gateway approval path puts approval context under `extra` but omits the approval
 queue's `request_id` (`tools/approval.py:4518-4540`; `tui_gateway/methods_prompt.py:1659-1668`).
-A consumer cannot call `approval.respond` from the webhook payload alone. The patch documents
-treating it as a notification and calling `approval.pending` for the authoritative record first.
+A consumer cannot answer *that* approval from the webhook payload alone: with no `request_id`,
+`approval.respond` resolves the session's oldest pending approval
+(`tools/approval.py:2846-2859`), which is the right one only when exactly one is queued. The
+patch documents treating the webhook as a notification and calling `approval.pending` for the
+authoritative record first.
 
 **5. "Lossless" and "seamless" replay wording overstates a bounded ring.**
 Comments in `apps/shared/src/json-rpc-gateway.ts:111`, `tui_gateway/event_replay.py:3-8`, and
@@ -92,7 +96,7 @@ re-derived and re-verified against the HEAD above before this was prepared; clai
 stale in between were dropped rather than filed. Two findings were withdrawn as our own errors
 rather than upstream defects.
 
-The SHA above is `main` as of 2026-08-30. The full claim-by-claim record, including everything we
+The SHA above is a commit on `main` as of 2026-08-30. The full claim-by-claim record, including everything we
 dropped, is in
 [`HEAD-REVERIFICATION.md`](https://github.com/Phasmotic/Ipsima/blob/main/contributions/nous-research/HEAD-REVERIFICATION.md).
 

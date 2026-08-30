@@ -52,7 +52,7 @@ Reproduction from a canonical Hermes Git object database:
 python3 -B scripts/derive_protocol.py <Hermes-checkout> \
   --revision 26350357d76e4508c8df9304a3374bdc5a6f6220 \
   --derived-at 2026-08-30 \
-  --expected-counts 170 58 42 \
+  --expected-counts 170 63 42 \
   --output protocol/methods-26350357.json \
   --check
 ```
@@ -81,7 +81,7 @@ audit and resolve to no public document; every row is self-contained and cites i
 | 10 | STILL VALID | Gated/public mode accepts ticket or internal credentials and rejects legacy token; loopback compatibility, paired subprotocol parsing, and internal-child credential behavior remain (`hermes_cli/web_server.py:16277-16412,19511-19521`; `hermes_cli/dashboard_auth/ws_tickets.py:110-153`). |
 | 11 | STILL VALID | REST/SSE remains a separate bearer-key API-server listener with no `/api/ws` contract (`gateway/platforms/api_server.py:1511,1920-1973,2247-2277`; `website/docs/user-guide/tui.md:284-290`). |
 | 12a | STILL VALID | Requests and events remain separate namespaces, with only `session.title` and `session.usage` colliding (`tui_gateway/methods_session.py:1310,1710`; `tui_gateway/server.py:12539,12896-12897`). |
-| 12b | STALE | The 168-request, 56-event, and 224-test live-HEAD counts are obsolete. HEAD derives 170 requests and 63 events, hence 233 kind-aware cases. See the extractor-correction note above: the 56 and 58 event counts were themselves understated. |
+| 12b | STALE | The 168-request, 56-event, and 224-test live-HEAD counts are obsolete. HEAD derives 170 requests and 63 events, which would be 233 kind-aware cases; the repository generates 229 from the pinned 168/61. See the extractor-correction note above: the 56 and 58 event counts were themselves understated. |
 | 13 | STILL VALID | Session transport, request-context transport, then stdio precedence and separate sessionless broadcast remain (`tui_gateway/server.py:2478-2508,2522-2565`). |
 | 14 | STILL VALID | Browser-controller notifications still bypass central routing, sequence stamping, and replay while using a standard sessionful event envelope (`tui_gateway/methods_browser_control.py:92-114`). |
 | 15a | STILL VALID | The TUI gateway emits `tool.start`, optional `tool.generating`, optional `tool.output_risk`, and `tool.complete`; it has no `tool.progress` producer (`tui_gateway/server.py:7735-7854,8051-8082`). The TUI event guide's `tool.progress` producer claim is contributably wrong (`website/docs/developer-guide/programmatic-integration.md:75-77`). |
