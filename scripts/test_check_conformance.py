@@ -115,7 +115,7 @@ class CheckConformanceTests(unittest.TestCase):
         result = self.run_checker()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("catalog requests: 168", result.stdout)
-        self.assertIn("catalog events  : 56", result.stdout)
+        self.assertIn("catalog events  : 61", result.stdout)
         self.assertIn("generated tests : 229", result.stdout)
         self.assertEqual(result.stdout.splitlines()[-1], "G3: PASS")
 
