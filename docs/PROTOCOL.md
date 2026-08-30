@@ -12,17 +12,17 @@ reads Git objects at the pinned commit rather than mutable working-tree files. I
 digests for all 33 source inputs, rejects a different upstream origin or unresolved commit, and
 ratchets the catalog to the expected counts. The committed catalog's pinned SHA-256 is:
 
-`c51404eb76d93a37f36155dc2df9688821aab8a9d694135d1407bfe7de96928b`
+`0d87c36ee37f34d90e989259e0fa25fcfb24fce4e8a3c0f0f1c04a2bb735dda4`
 
 Current exact inventory:
 
 | Surface | Count |
 | --- | ---: |
 | Registered JSON-RPC requests | 168 |
-| Server event types | 56 |
+| Server event types | 61 |
 | REST method/path routes | 42 |
 | Pinned upstream source inputs | 33 |
-| Generated kind-aware conformance tests | 224 |
+| Generated kind-aware conformance tests | 229 |
 | Sanitized frames in the golden fixture | 3 |
 
 `protocol/methods.json` is an identity and provenance catalog, not a complete schema for every
@@ -38,7 +38,7 @@ Before preparing any upstream contribution, every upstream-facing claim in this 
 rechecked against exact Hermes commit
 `26350357d76e4508c8df9304a3374bdc5a6f6220` on 2026-08-30. The independently derived second
 catalog is `protocol/methods-26350357.json`; its SHA-256 is
-`8863412ba36e4b518da9aff635312e937d97a7a44c92ebf52c99c1694a15255b`.
+`15f4544c8c8350bc4a47d4195d9a2b45ad6c32fc5b6cf35d610af4dae205a5a2`.
 
 HEAD has 170 requests, 58 events, and the same 42 REST routes. It adds requests
 `mcp.servers.oauth.callback` and `prompt.btw`, plus events `btw.complete` and `todo.updated`, with
@@ -184,7 +184,7 @@ collide across kinds:
 
 Each collision therefore has two distinct generated tests: a request-shaped JSON-RPC round trip
 and a real event-envelope round trip. Across the whole catalog, generation produces exactly 168
-request tests plus 56 event tests, for 224 kind-aware tests. Collapsing the namespaces would hide
+request tests plus 61 event tests, for 229 kind-aware tests. Collapsing the namespaces would hide
 two cases and is a G3 failure.
 
 For events flowing through `server.write_json` and carrying a live `session_id`, the server routes
@@ -599,7 +599,7 @@ python3 -B scripts/derive_protocol.py <clean-pinned-Hermes-checkout> --check
 ```
 
 The derivation ignores the checked-out branch and mutable files. It reads the pinned objects,
-validates the 33-input manifest, verifies the 168/56/42 count ratchet, and compares exact catalog
+validates the 33-input manifest, verifies the 168/61/42 count ratchet, and compares exact catalog
 bytes. A new upstream revision is a contract change: update the source commit, reviewed input
 set, expected counts, and pinned catalog digest together; regenerate; inspect the semantic diff;
 then run G3. Never point the existing derivation at a moving branch and call the result equivalent.
@@ -628,7 +628,7 @@ decode/re-encode fixed point.
 
 The harness deliberately does not submit a model-backed prompt. The fixture proves real
 WebSocket framing, event wrapping, request dispatch, response correlation, and codec stability;
-catalog-wide behavior is covered by the 224 generated tests. A deterministic three-frame capture
+catalog-wide behavior is covered by the 229 generated tests. A deterministic three-frame capture
 must not be described as a full chat, streaming, or approval transcript.
 
 Capture is foreground-only and fail-closed. Before launch it verifies a clean pinned checkout,

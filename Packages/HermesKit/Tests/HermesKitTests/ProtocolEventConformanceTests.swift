@@ -173,6 +173,10 @@ extension ProtocolConformanceTests {
         try self.assertEventRoundTrip(type: "session.info")
     }
 
+    func testE_SessionReclaimed() throws {
+        try self.assertEventRoundTrip(type: "session.reclaimed")
+    }
+
     func testE_SessionResume_progress() throws {
         try self.assertEventRoundTrip(type: "session.resume_progress")
     }
@@ -183,6 +187,10 @@ extension ProtocolConformanceTests {
 
     func testE_SessionUsage() throws {
         try self.assertEventRoundTrip(type: "session.usage")
+    }
+
+    func testE_SkinChanged() throws {
+        try self.assertEventRoundTrip(type: "skin.changed")
     }
 
     func testE_StatusUpdate() throws {
@@ -235,6 +243,18 @@ extension ProtocolConformanceTests {
 
     func testE_TourRequest() throws {
         try self.assertEventRoundTrip(type: "tour.request")
+    }
+
+    func testE_VoiceInterrupted() throws {
+        try self.assertEventRoundTrip(type: "voice.interrupted")
+    }
+
+    func testE_VoiceStatus() throws {
+        try self.assertEventRoundTrip(type: "voice.status")
+    }
+
+    func testE_VoiceTranscript() throws {
+        try self.assertEventRoundTrip(type: "voice.transcript")
     }
 
     func testE_WakeDetected() throws {

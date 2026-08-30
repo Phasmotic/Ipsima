@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
 """Derive ``protocol/methods.json`` from a pinned Hermes Git commit.
 
 The checkout is only an object database. Source is always read with ``git
@@ -27,15 +28,25 @@ import re
 import subprocess
 import sys
 import tempfile
+import urllib.parse
 from collections.abc import Mapping, Sequence
 
 SOURCE_REPOSITORY = "https://github.com/NousResearch/hermes-agent.git"
 SOURCE_COMMIT = "e3b5512b7b3f6cbcb23ba5fffdc66d5015eca246"
 PINNED_CATALOG_SHA256 = (
-    "c51404eb76d93a37f36155dc2df9688821aab8a9d694135d1407bfe7de96928b"
+    "0d87c36ee37f34d90e989259e0fa25fcfb24fce4e8a3c0f0f1c04a2bb735dda4"
 )
 DERIVED_AT = "2026-08-26"
 
+_GIT_ENV_OVERRIDES = frozenset(
+    {
+        "GIT_DIR",
+        "GIT_WORK_TREE",
+        "GIT_INDEX_FILE",
+        "GIT_OBJECT_DIRECTORY",
+        "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    }
+)
 INTERNAL_MODULES = {"compute_host.py", "host_supervisor.py"}
 REQUIRED_TUI_INPUTS = {
     "tui_gateway/entry.py",
@@ -48,7 +59,17 @@ EXPLICIT_INPUTS = (
     "hermes_cli/dashboard_auth/ws_tickets.py",
     "hermes_cli/web_server.py",
 )
-EXPECTED_COUNTS = (168, 56, 42)
+EXPECTED_COUNTS = (168, 61, 42)
+# Events reach clients through several named helpers, not only ``_emit``:
+# ``tui_gateway/server.py`` also fans them out via ``_voice_emit`` and
+# ``_broadcast_global_event``. Matching any callee whose name contains
+# ``emit`` or ``broadcast`` keeps a new wrapper from silently dropping
+# identities. Events passed as a variable rather than a literal remain out
+# of reach of any call-site scan; see scripts/PROTOCOL_CATALOG.md.
+EVENT_EMIT_PATTERN = (
+    r'(?:^|[^\w.])([A-Za-z_]\w*(?:emit|broadcast)\w*)'
+    r'\(\s*["\']([a-z0-9_.]+)["\']'
+)
 
 
 class DerivationBlocked(RuntimeError):
@@ -92,31 +113,51 @@ class GitObjectSource:
         self.repository = repository.resolve()
         self.revision = revision
         self.expected_repository = expected_repository
+        self.resolved_revision = revision
 
     def snapshot(self) -> dict[str, SourceFile]:
         if not self.repository.is_dir():
-            raise DerivationBlocked("Hermes Git checkout is not a directory")
+            raise DerivationBlocked(
+                f"Hermes Git checkout is not a directory: {self.repository}"
+            )
 
         origin = self._text("remote", "get-url", "origin").strip()
-        if origin != self.expected_repository:
+        if _normalize_remote(origin) != _normalize_remote(
+            self.expected_repository
+        ):
+            # Name the expectation only when it is the public default;
+            # a caller-supplied mirror may itself be sensitive, and the
+            # observed origin is never echoed.
+            expectation = (
+                f" ({SOURCE_REPOSITORY})"
+                if self.expected_repository == SOURCE_REPOSITORY
+                else ""
+            )
             raise DerivationBlocked(
-                "Hermes origin does not match the pinned canonical repository"
+                "Hermes origin does not match the canonical repository"
+                f"{expectation}; pass --expect-origin to derive from a fork "
+                "or mirror"
             )
 
         resolved = self._text(
             "rev-parse", "--verify", f"{self.revision}^{{commit}}"
         ).strip()
-        if resolved != self.revision:
+        _validate_revision(resolved)
+        if (
+            re.fullmatch(r"[0-9a-f]{40}", self.revision)
+            and resolved != self.revision
+        ):
             raise DerivationBlocked(
                 f"pinned Hermes commit resolved unexpectedly: {resolved!r}"
             )
+        self.resolved_revision = resolved
 
         tree = self._git(
             "ls-tree",
             "-r",
             "--name-only",
             "-z",
-            self.revision,
+            self.resolved_revision,
             "--",
             "tui_gateway",
         )
@@ -155,7 +196,7 @@ class GitObjectSource:
 
         files: dict[str, SourceFile] = {}
         for path in paths:
-            object_name = f"{self.revision}:{path}"
+            object_name = f"{self.resolved_revision}:{path}"
             raw = self._git("show", object_name, allow_empty=True)
             if not raw:
                 size = self._text("cat-file", "-s", object_name).strip()
@@ -183,14 +224,21 @@ class GitObjectSource:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 check=False,
+                env={
+                    key: value
+                    for key, value in os.environ.items()
+                    if key not in _GIT_ENV_OVERRIDES
+                },
             )
         except OSError as error:
             raise DerivationBlocked(
                 f"could not execute Git ({type(error).__name__})"
             ) from error
         if result.returncode != 0:
+            hint = _git_failure_hint(result.stderr)
             raise DerivationBlocked(
-                f"Git command failed ({' '.join(args)}; exit {result.returncode})"
+                f"Git command failed ({' '.join(args)}; "
+                f"exit {result.returncode})" + (f"; {hint}" if hint else "")
             )
         if not result.stdout and not allow_empty:
             raise DerivationBlocked(
@@ -202,9 +250,9 @@ class GitObjectSource:
 def derive_catalog(
     files: Mapping[str, SourceFile],
     *,
-    expected_counts: tuple[int, int, int] | None = EXPECTED_COUNTS,
-    source_commit: str = SOURCE_COMMIT,
-    derived_at: str = DERIVED_AT,
+    expected_counts: tuple[int, int, int] | None = None,
+    source_commit: str,
+    derived_at: str,
 ) -> dict[str, object]:
     """Derive and validate the catalog from a complete pinned source snapshot."""
     _validate_revision(source_commit)
@@ -231,10 +279,8 @@ def derive_catalog(
             )
         if pathlib.PurePosixPath(source.path).name in INTERNAL_MODULES:
             continue
-        for match in re.finditer(
-            r'\b(?:_emit|emit)\(\s*["\']([a-z0-9_.]+)["\']', source.text
-        ):
-            events.setdefault(match.group(1), []).append(
+        for match in re.finditer(EVENT_EMIT_PATTERN, source.text, re.MULTILINE):
+            events.setdefault(match.group(2), []).append(
                 _loc(source.path, source.text, match.start())
             )
 
@@ -399,37 +445,47 @@ def atomic_write(path: pathlib.Path, content: bytes) -> None:
 
 def run(
     source_root: pathlib.Path,
-    output: pathlib.Path,
+    output: pathlib.Path | None,
     *,
     check: bool,
     revision: str = SOURCE_COMMIT,
     expected_counts: tuple[int, int, int] | None = None,
     derived_at: str | None = None,
+    expect_origin: str = SOURCE_REPOSITORY,
 ) -> int:
-    _validate_revision(revision)
-    default_output = pathlib.Path(__file__).resolve().parent.parent / "protocol" / "methods.json"
-    is_default_output = output.resolve() == default_output
+    default_output = (
+        pathlib.Path(__file__).resolve().parent.parent / "protocol" / "methods.json"
+    )
 
-    if revision == SOURCE_COMMIT:
-        resolved_counts = EXPECTED_COUNTS if expected_counts is None else expected_counts
+    # Policy is decided before any Git access: a bad flag combination should
+    # not cost a round-trip to discover. For a 40-hex revision this is exact;
+    # a symbolic revision is re-checked against the resolved commit below.
+    names_pin = revision == SOURCE_COMMIT
+    if output is None and names_pin:
+        output = default_output
+    is_default_output = output is not None and output.resolve() == default_output
+
+    if check and output is None:
+        raise DerivationBlocked("--check needs --output to compare against")
+
+    if names_pin:
+        resolved_counts = (
+            EXPECTED_COUNTS if expected_counts is None else expected_counts
+        )
         resolved_date = DERIVED_AT if derived_at is None else derived_at
     else:
-        if is_default_output:
-            raise DerivationBlocked(
-                "an alternate Hermes revision requires an explicit non-default output"
-            )
-        if derived_at is None or expected_counts is None:
-            raise DerivationBlocked(
-                "an alternate Hermes revision requires explicit derived-at and expected counts"
-            )
+        # Off the pin the counts are an observation, not a contract: adding a
+        # method is normal upstream. Ratchet only when asked to.
         resolved_counts = expected_counts
-        resolved_date = derived_at
+        resolved_date = (
+            datetime.date.today().isoformat() if derived_at is None else derived_at
+        )
 
     _validate_derived_at(resolved_date)
-    if any(count < 0 for count in resolved_counts):
+    if resolved_counts is not None and any(count < 0 for count in resolved_counts):
         raise DerivationBlocked("expected catalog counts must be nonnegative")
     if is_default_output and (
-        revision != SOURCE_COMMIT
+        not names_pin
         or resolved_date != DERIVED_AT
         or resolved_counts != EXPECTED_COUNTS
     ):
@@ -437,11 +493,20 @@ def run(
             "the default catalog requires the complete pinned provenance profile"
         )
 
-    files = GitObjectSource(source_root, revision=revision).snapshot()
+    source = GitObjectSource(
+        source_root, revision=revision, expected_repository=expect_origin
+    )
+    files = source.snapshot()
+    resolved_revision = source.resolved_revision
+    if is_default_output and resolved_revision != SOURCE_COMMIT:
+        raise DerivationBlocked(
+            "the default catalog requires the complete pinned provenance profile"
+        )
+
     catalog = derive_catalog(
         files,
         expected_counts=resolved_counts,
-        source_commit=revision,
+        source_commit=resolved_revision,
         derived_at=resolved_date,
     )
     content = catalog_bytes(catalog)
@@ -469,6 +534,12 @@ def run(
         print(
             f"methods: {counts[0]}  events: {counts[1]}  rest: {counts[2]}"
         )
+        print("DERIVATION: PASS")
+        return 0
+
+    if output is None:
+        print(f"revision: {resolved_revision}")
+        print(f"methods: {counts[0]}  events: {counts[1]}  rest: {counts[2]}")
         print("DERIVATION: PASS")
         return 0
 
@@ -503,6 +574,62 @@ def _require_inputs(files: Mapping[str, SourceFile]) -> None:
             "source snapshot contains undeclared inputs: "
             + ", ".join(sorted(unexpected))
         )
+
+
+# Git's stderr may name a private mirror or a local path, and these messages
+# reach CI logs and bug reports, so it is never echoed. Recognising a few
+# signatures gives the caller something actionable while keeping the observed
+# text inside the process.
+_GIT_FAILURE_HINTS = (
+    (b"Needed a single revision", "the revision could not be resolved"),
+    (b"unknown revision", "the revision does not exist in this checkout"),
+    (b"bad revision", "the revision expression is not valid"),
+    (b"not a git repository", "the path is not a Git repository"),
+    (b"No such remote", "this checkout has no 'origin' remote"),
+    (b"does not appear to be a git repository", "the path is not a Git repository"),
+    (b"dangling symref", "the revision resolves to a broken reference"),
+    (b"Not a valid object name", "the object is missing; the clone may be shallow"),
+)
+
+
+def _git_failure_hint(stderr: bytes) -> str:
+    """Map a known Git failure signature to a safe, canned explanation.
+
+    Returns "" when nothing matches. The observed stderr is never included in
+    the result -- see ``test_git_failure_does_not_echo_raw_stderr``.
+    """
+    for signature, hint in _GIT_FAILURE_HINTS:
+        if signature.lower() in stderr.lower():
+            return hint
+    return ""
+
+
+def _normalize_remote(url: str) -> str:
+    """Reduce a Git remote URL to a comparable ``host/owner/repo`` triple.
+
+    The scp-style, SSH and HTTPS spellings of one repository all reduce to the
+    same ``host/owner/repo``. Comparing raw strings accepts a single spelling,
+    which rejects maintainers who clone over SSH and contributors who work
+    from a fork.
+
+    Only authenticated transports are recognised. An unauthenticated remote is
+    not treated as equivalent to the canonical one, because for a provenance
+    tool that would silently widen what counts as "the same repository".
+    """
+    value = url.strip()
+    parts = urllib.parse.urlsplit(value)
+    if parts.scheme.lower() in {"https", "ssh"}:
+        host = parts.hostname or parts.netloc.rpartition("@")[2]
+        value = f"{host}/{parts.path.lstrip('/')}"
+    elif not parts.scheme:
+        # scp-style: [user@]host:owner/repo
+        host, separator, path = value.rpartition(":")
+        if separator and not path.split("/", 1)[0].isdigit():
+            value = f"{host.rpartition('@')[2]}/{path}"
+    value = value.strip("/")
+    if value.endswith(".git"):
+        value = value[: -len(".git")]
+    return value.casefold()
 
 
 def _validate_revision(revision: str) -> None:
@@ -655,20 +782,65 @@ def _grep(source: SourceFile, pattern: str) -> dict[str, list[str]]:
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description=(
+            "Derive a machine-readable catalog of the Hermes TUI-gateway "
+            "JSON-RPC request and event identities and REST routes, by "
+            "reading Git objects from a Hermes checkout."
+        ),
+        epilog=(
+            "examples:\n"
+            "  # report what a revision contains, writing nothing\n"
+            "  derive_protocol.py /path/to/hermes-agent --revision HEAD\n"
+            "\n"
+            "  # write a catalog for one revision\n"
+            "  derive_protocol.py /path/to/hermes-agent --revision v1.2.3 \\\n"
+            "      --output protocol/methods-v1.2.3.json\n"
+            "\n"
+            "  # verify a committed catalog still regenerates byte-identically\n"
+            "  derive_protocol.py /path/to/hermes-agent --revision <sha> \\\n"
+            "      --output protocol/methods-<sha>.json --check\n"
+            "\n"
+            "exit status:\n"
+            "  0  catalog written, or byte-identical under --check\n"
+            "  1  --check found drift\n"
+            "  2  source or output evidence could not be evaluated\n"
+            "\n"
+            "The checkout is only an object database: source is read with\n"
+            "'git show <commit>:<path>', so a dirty worktree or a moving branch\n"
+            "cannot change the result. See scripts/PROTOCOL_CATALOG.md for what\n"
+            "the catalog does and does not cover.\n"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     parser.add_argument(
         "source_root",
         nargs="?",
         type=pathlib.Path,
-        default=pathlib.Path("~/.hermes/hermes-agent").expanduser(),
-        help="local Git object database containing the pinned Hermes commit",
+        default=pathlib.Path("."),
+        help=(
+            "Hermes Git checkout to read objects from (default: the current "
+            "directory, so this can run inside the Hermes repository itself)"
+        ),
     )
-    repo = pathlib.Path(__file__).resolve().parent.parent
     parser.add_argument(
         "--output",
         type=pathlib.Path,
-        default=repo / "protocol" / "methods.json",
-        help="catalog destination (or comparison target with --check)",
+        default=None,
+        help=(
+            "catalog destination, or comparison target with --check. Defaults "
+            "to protocol/methods.json only when deriving the pinned commit; "
+            "off the pin, omitting it reports the counts without writing"
+        ),
+    )
+    parser.add_argument(
+        "--expect-origin",
+        default=SOURCE_REPOSITORY,
+        help=(
+            "expected 'origin' remote; compared after normalising scheme, "
+            "user, and .git suffix, so SSH and HTTPS spellings both match. "
+            "Point it at a fork to derive from one"
+        ),
     )
     parser.add_argument(
         "--check",
@@ -679,15 +851,16 @@ def _parser() -> argparse.ArgumentParser:
         "--revision",
         default=SOURCE_COMMIT,
         help=(
-            "full immutable Hermes commit SHA; a non-default revision requires "
-            "an explicit non-default --output"
+            "any Git revision expression (HEAD, a tag, a branch, a SHA); it is "
+            "resolved to an immutable commit before anything is read "
+            f"(default: the pinned {SOURCE_COMMIT[:12]}...)"
         ),
     )
     parser.add_argument(
         "--derived-at",
         help=(
-            "deterministic ISO-8601 catalog derivation date; required for an "
-            "alternate revision"
+            "deterministic ISO-8601 derivation date recorded in the catalog "
+            "(default: the pinned date on the pinned commit, today otherwise)"
         ),
     )
     parser.add_argument(
@@ -696,8 +869,10 @@ def _parser() -> argparse.ArgumentParser:
         type=int,
         metavar=("REQUESTS", "EVENTS", "REST"),
         help=(
-            "exact request, event, and REST count ratchet; required for an "
-            "alternate revision"
+            "fail unless the derived counts match exactly. This is a "
+            "downstream-consumer ratchet for pinning a contract; off the "
+            "pinned commit it is optional and unset by default, because "
+            "adding a method is normal upstream"
         ),
     )
     return parser
@@ -717,6 +892,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 else tuple(arguments.expected_counts)
             ),
             derived_at=arguments.derived_at,
+            expect_origin=arguments.expect_origin,
         )
     except DerivationBlocked as error:
         print(f"derivation blocked: {error}", file=sys.stderr)
