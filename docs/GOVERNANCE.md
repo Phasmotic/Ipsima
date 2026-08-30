@@ -114,7 +114,7 @@ The retained ten-verdict history has median 3.0482066832 seconds and six failure
 twelve-measurement record restores two successful exact-SHA retries. All historical passes and
 failures remain valid measurements from a defectively specified instrument, and none remains a
 certification. The complete sanitized dataset and conflict-of-interest note are recorded in
-[public audit issue #2](https://github.com/markschonfeld/Talaria/issues/2#issuecomment-5457754926).
+[public audit issue #2](https://github.com/Phasmotic/Talaria/issues/2#issuecomment-5457754926).
 
 Replacement coverage is deferred to P2, to be designed alongside the re-arm when a real app's
 launch cost is a useful product property. No paired link study, pre-main timer, binary-size

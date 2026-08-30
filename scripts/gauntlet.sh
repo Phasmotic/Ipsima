@@ -46,7 +46,7 @@ GITLEAKS_VERSION="8.30.1"
 GITLEAKS_URL="https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz"
 GITLEAKS_SHA256="551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
 XCODEGEN_VERSION="2.46.0"
-TIER_B_REPOSITORY="markschonfeld/Talaria"
+TIER_B_REPOSITORY="Phasmotic/Talaria"
 KIT="Packages/HermesKit"
 TOOLS="$ART/tools"
 GH_RUN_BIN=""
@@ -1201,13 +1201,13 @@ tier_b() {
     case "$evidence_rc:$evidence_marker" in
         "0:TIER B EVIDENCE PASS: all three jobs reported PASS and the workflow run succeeded")
             if resolve_tier_b_g6 "$run_id"; then
-                record "TierB" PASS "run https://github.com/markschonfeld/Talaria/actions/runs/$run_id"
+                record "TierB" PASS "run https://github.com/Phasmotic/Talaria/actions/runs/$run_id"
             else
                 record "B*" BLOCKED "successful Tier B run could not resolve exactly one deferred G6 row"
             fi
             ;;
         "2:TIER B EVIDENCE BLOCKED: at least one job reported BLOCKED and the workflow run failed")
-            record "TierB" BLOCKED "at least one job reported BLOCKED: https://github.com/markschonfeld/Talaria/actions/runs/$run_id"
+            record "TierB" BLOCKED "at least one job reported BLOCKED: https://github.com/Phasmotic/Talaria/actions/runs/$run_id"
             ;;
         *)
             record "B*" BLOCKED "Tier B evidence checker status and marker disagreed"

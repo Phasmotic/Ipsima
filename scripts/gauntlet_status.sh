@@ -68,7 +68,7 @@ talaria_classify_github_pr_entry() {
         || [ "$runner_os" != "Linux" ] \
         || [ "$runner_arch" != "X64" ]; then
         TALARIA_CLASS_DETAIL="G1-G5 PR mode requires a GitHub-hosted Linux x64 runner"
-    elif [ "$repository" != "markschonfeld/Talaria" ] \
+    elif [ "$repository" != "Phasmotic/Talaria" ] \
         || [[ ! "$github_ref" =~ ^refs/pull/[1-9][0-9]*/merge$ ]] \
         || ! talaria_is_commit_sha "$github_sha"; then
         TALARIA_CLASS_DETAIL="G1-G5 PR mode requires the canonical pull-request merge source"

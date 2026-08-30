@@ -224,7 +224,7 @@ class SourceHygieneTests(unittest.TestCase):
     def test_g12_ledger_link_is_allowed_only_in_governed_docs(self) -> None:
         value = network_url(
             "https",
-            "github.com/markschonfeld/Talaria/issues/2"
+            "github.com/Phasmotic/Talaria/issues/2"
             "#issuecomment-5457754926",
         )
         source = f"[ledger]({value})\n"

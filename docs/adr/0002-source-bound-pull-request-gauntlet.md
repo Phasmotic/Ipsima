@@ -35,7 +35,7 @@ runner, or cache. Checkout uses the full-SHA-pinned checkout action, `fetch-dept
 
 Before running any file from the candidate checkout, the pinned workflow proves all of these:
 
-- the event is `pull_request` in `markschonfeld/Talaria` on a GitHub-hosted Linux x64 runner;
+- the event is `pull_request` in `Phasmotic/Talaria` on a GitHub-hosted Linux x64 runner;
 - the environment is Ubuntu 24.04 and is not WSL;
 - the checked-out commit exactly equals GitHub's nominated pull-request merge SHA;
 - the repository is not shallow; and

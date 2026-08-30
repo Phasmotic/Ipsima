@@ -2,7 +2,7 @@
 
 ## Authority and record
 
-Talaria is maintained in the public `markschonfeld/Talaria` repository. Preserve that exact
+Talaria is maintained in the public `Phasmotic/Talaria` repository. Preserve that exact
 capitalization in remotes, workflows, and documentation. The public audit ledger is issue #2.
 Pull request #1 preserved and reviewed the recovered Phase 0 handoff, audit repair, and README
 correction; it merged into `main` at `5a48deb`.
@@ -282,7 +282,7 @@ cannot reliably fail for the claimed reason: the retained ten-verdict history ha
 3.0482066832 seconds and six failures, while exact-SHA reruns moved by as much as 1.56285685
 seconds. Every historical pass and failure remains a measurement from that defective instrument;
 none remains a certification. The complete sanitized record is linked from
-[public audit issue #2](https://github.com/markschonfeld/Talaria/issues/2#issuecomment-5457754926).
+[public audit issue #2](https://github.com/Phasmotic/Talaria/issues/2#issuecomment-5457754926).
 
 Replacement coverage is **DEFERRED to P2**, to be designed alongside the re-arm when a real app's
 launch cost is worth measuring. P1.2 does not run a paired link study, pre-main timer, binary-size
